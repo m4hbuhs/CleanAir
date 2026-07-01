@@ -1,4 +1,4 @@
-# Secrets and Credentials
+
 .env
 .env.*
 !.env.example
@@ -12,7 +12,7 @@ service_account*.json
 google_credentials.json
 firebase-adminsdk*.json
 *credentials*.json
-# Virtual Environments
+
 myenv/
 venv/
 .venv/
