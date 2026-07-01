@@ -1,3 +1,15 @@
+
 .env
-__pycache__/
+# Virtual Environments
 myenv/
+venv/
+.venv/
+
+__pycache__/
+*.pyc
+
+*.csv
+model.pkl
+
+.pytest_cache/
+.streamlit/
