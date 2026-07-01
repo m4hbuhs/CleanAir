@@ -76,6 +76,8 @@ streamlit run 🍃_CleanAir.py
 
 The app opens at `http://localhost:8501`
 
+> ⚠️ **SECURITY WARNING:** Never commit your `.env` file or credential JSON files to version control. The `.gitignore` is pre-configured to ignore `.env`, `*.pem`, `*.key`, and service account files. Always use environment variables for secrets and never hardcode API keys in the source code.
+
 ---
 
 ## 📂 Project Structure
