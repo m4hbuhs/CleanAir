@@ -1,0 +1,108 @@
+{
+  "delhi_grid_cells": [
+    {
+      "latitude": 28.6139,
+      "longitude": 77.2090,
+      "ndvi": 0.28,
+      "thermal_anomaly": false,
+      "land_use": "urban_dense",
+      "smoke_detected": false,
+      "industrial_zone": false,
+      "aod": 0.42,
+      "source": "mock_sentinel_2"
+    },
+    {
+      "latitude": 28.6300,
+      "longitude": 77.2200,
+      "ndvi": 0.15,
+      "thermal_anomaly": true,
+      "land_use": "industrial",
+      "smoke_detected": true,
+      "industrial_zone": true,
+      "aod": 0.68,
+      "source": "mock_sentinel_2"
+    },
+    {
+      "latitude": 28.6400,
+      "longitude": 77.2100,
+      "ndvi": 0.35,
+      "thermal_anomaly": false,
+      "land_use": "urban_residential",
+      "smoke_detected": false,
+      "industrial_zone": false,
+      "aod": 0.38,
+      "source": "mock_sentinel_2"
+    },
+    {
+      "latitude": 28.6050,
+      "longitude": 77.2350,
+      "ndvi": 0.12,
+      "thermal_anomaly": true,
+      "land_use": "industrial",
+      "smoke_detected": true,
+      "industrial_zone": true,
+      "aod": 0.75,
+      "source": "mock_modis"
+    },
+    {
+      "latitude": 28.6200,
+      "longitude": 77.1950,
+      "ndvi": 0.52,
+      "thermal_anomaly": false,
+      "land_use": "park_green",
+      "smoke_detected": false,
+      "industrial_zone": false,
+      "aod": 0.25,
+      "source": "mock_landsat"
+    },
+    {
+      "latitude": 28.6350,
+      "longitude": 77.2300,
+      "ndvi": 0.18,
+      "thermal_anomaly": false,
+      "land_use": "commercial",
+      "smoke_detected": false,
+      "industrial_zone": false,
+      "aod": 0.45,
+      "source": "mock_sentinel_2"
+    },
+    {
+      "latitude": 28.6100,
+      "longitude": 77.2100,
+      "ndvi": 0.22,
+      "thermal_anomaly": true,
+      "land_use": "mixed_use",
+      "smoke_detected": true,
+      "industrial_zone": false,
+      "aod": 0.58,
+      "source": "mock_modis"
+    },
+    {
+      "latitude": 28.6450,
+      "longitude": 77.2250,
+      "ndvi": 0.30,
+      "thermal_anomaly": false,
+      "land_use": "urban_residential",
+      "smoke_detected": false,
+      "industrial_zone": false,
+      "aod": 0.33,
+      "source": "mock_sentinel_2"
+    }
+  ],
+  "metadata": {
+    "source_datasets": ["Sentinel-2", "MODIS", "Landsat-8"],
+    "processing": "mock_google_earth_engine",
+    "resolution_m": 500,
+    "timestamp": "2026-07-01T12:00:00Z",
+    "region": "Delhi NCR",
+    "disclaimer": "This is simulated satellite data for hackathon demo. In production, integrate Google Earth Engine API for real Sentinel/MODIS/Landsat imagery.",
+    "fields": {
+      "ndvi": "Normalized Difference Vegetation Index (0-1). Low values indicate barren/built-up areas.",
+      "thermal_anomaly": "Fire/heat source detected via thermal band analysis.",
+      "land_use": "Classified land cover type.",
+      "smoke_detected": "Smoke plume detected via spectral analysis.",
+      "industrial_zone": "Area classified as industrial from land use data.",
+      "aod": "Aerosol Optical Depth — higher values correlate with more particulate matter."
+    }
+  }
+}
