@@ -1,5 +1,17 @@
-
+# Secrets and Credentials
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials/
+secrets/
+service_account*.json
+google_credentials.json
+firebase-adminsdk*.json
+*credentials*.json
 # Virtual Environments
 myenv/
 venv/
