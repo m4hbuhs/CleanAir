@@ -147,6 +147,10 @@ class VisionClassification(BaseModel):
     is_fake_upload: bool = Field(default=False, description="True if image doesn't show pollution")
     bounding_box_description: str = Field(default="", description="Where in the image it was found")
     location_mentioned: Optional[str] = Field(default=None, description="Any geographic location/landmark mentioned in the text")
+    # Extended Gemini pollution features for the Virtual Sensor Engine
+    gemini_pollution_features: Optional["GeminiPollutionFeatures"] = Field(
+        default=None, description="Full environmental features extracted by Gemini"
+    )
 
 
 # ─────────────────────────────────────────────
@@ -251,3 +255,189 @@ class GridCell(BaseModel):
     vision_severity_boost: float = 0.0
     risk_level: str = ""
     color: str = "#00E400"
+
+
+# ─────────────────────────────────────────────
+# Gemini Pollution Feature Extraction Output
+# ─────────────────────────────────────────────
+
+class GeminiPollutionFeatures(BaseModel):
+    """
+    Structured environmental features extracted by Gemini Vision.
+
+    Gemini NEVER outputs AQI. Instead, it extracts observable
+    pollution indicators that become ML features for the
+    Virtual Sensor Engine.
+    """
+    pollution_type: str = "Unknown"
+    severity: str = "Moderate"  # "Low" | "Moderate" | "High" | "Critical"
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    visibility: str = "Normal"  # "Clear" | "Normal" | "Low" | "Very Low"
+    road_activity: str = "Normal"  # "None" | "Light" | "Normal" | "Heavy" | "Gridlock"
+    construction_detected: bool = False
+    smoke_detected: bool = False
+    dust_detected: bool = False
+    burning_detected: bool = False
+    vehicle_exhaust_detected: bool = False
+    description: str = ""
+    is_fake_upload: bool = False
+    bounding_box_description: str = ""
+    location_mentioned: Optional[str] = None
+
+    def to_numerical_scores(self) -> dict:
+        """
+        Convert qualitative Gemini observations into numerical
+        feature scores (0.0–1.0) suitable for ML pipelines.
+        """
+        severity_map = {"Low": 0.2, "Moderate": 0.5, "High": 0.8, "Critical": 1.0}
+        visibility_map = {"Clear": 0.0, "Normal": 0.2, "Low": 0.6, "Very Low": 1.0}
+        road_map = {"None": 0.0, "Light": 0.2, "Normal": 0.4, "Heavy": 0.7, "Gridlock": 1.0}
+
+        return {
+            "dust_score": 1.0 if self.dust_detected else 0.0,
+            "smoke_score": 1.0 if self.smoke_detected else 0.0,
+            "construction_score": 1.0 if self.construction_detected else 0.0,
+            "burning_score": 1.0 if self.burning_detected else 0.0,
+            "vehicle_pollution_score": 1.0 if self.vehicle_exhaust_detected else 0.0,
+            "severity_score": severity_map.get(self.severity, 0.5),
+            "visibility_score": visibility_map.get(self.visibility, 0.2),
+            "traffic_score": road_map.get(self.road_activity, 0.4),
+        }
+
+    def to_severity_multiplier(self) -> float:
+        """
+        Compute the legacy severity_multiplier (1.0–1.5) from the
+        extracted features, for backward compatibility with existing
+        XGBoost inference.
+        """
+        scores = self.to_numerical_scores()
+        # Weighted average of key indicators
+        raw = (
+            scores["severity_score"] * 0.35
+            + scores["smoke_score"] * 0.15
+            + scores["dust_score"] * 0.15
+            + scores["burning_score"] * 0.15
+            + scores["construction_score"] * 0.10
+            + scores["traffic_score"] * 0.10
+        )
+        # Map 0–1 to 1.0–1.5
+        return round(1.0 + raw * 0.5, 2)
+
+
+# ─────────────────────────────────────────────
+# Satellite Features
+# ─────────────────────────────────────────────
+
+class SatelliteFeatures(BaseModel):
+    """Satellite-derived environmental features."""
+    aerosol_optical_depth: float = 0.0
+    dust: float = 0.0
+    uv_index: float = 0.0
+    land_surface_temp: float = 0.0
+    thermal_anomaly: bool = False
+    smoke_detected: bool = False
+    source: str = "mock"  # "mock" | "sentinel_2" | "modis" | "cams"
+
+
+# ─────────────────────────────────────────────
+# Historical Features
+# ─────────────────────────────────────────────
+
+class HistoricalFeatures(BaseModel):
+    """Time-series features derived from AQI history."""
+    previous_hour_aqi: float = 0.0
+    previous_day_aqi: float = 0.0
+    rolling_avg_3h: float = 0.0
+    rolling_avg_24h: float = 0.0
+    same_hour_yesterday: float = 0.0
+    same_hour_last_week: float = 0.0
+    month: int = 1
+    weekday: int = 0
+    hour: int = 12
+
+
+# ─────────────────────────────────────────────
+# Confidence Breakdown
+# ─────────────────────────────────────────────
+
+class ConfidenceBreakdown(BaseModel):
+    """
+    Multi-factor confidence assessment for an AQI estimate.
+
+    Each component is scored 0.0–1.0, then combined with
+    configurable weights to produce the overall confidence.
+    """
+    station_distance_score: float = 0.5
+    citizen_report_score: float = 0.3
+    gemini_confidence_score: float = 0.5
+    data_freshness_score: float = 1.0
+    missing_features_score: float = 1.0
+    overall_confidence: float = 0.5
+    confidence_label: str = "Medium"  # "High" | "Medium" | "Low"
+    overall_pct: int = 50  # 0–100%
+
+
+# ─────────────────────────────────────────────
+# Hourly Forecast Point
+# ─────────────────────────────────────────────
+
+class HourlyForecastPoint(BaseModel):
+    """A single point in the 24-hour AQI forecast."""
+    hour_offset: int = 0  # 0 = current hour, 1 = +1h, ...
+    estimated_aqi: float = 0.0
+    confidence: float = 0.5
+    weather_summary: str = ""
+
+
+# ─────────────────────────────────────────────
+# Virtual Sensor Result (Unified Engine Output)
+# ─────────────────────────────────────────────
+
+class VirtualSensorResult(BaseModel):
+    """
+    Unified output from the Virtual Sensor Engine.
+
+    Contains the estimated AQI, official station AQI, confidence
+    breakdown, 24-hour forecast, and all contributing features.
+    This is the single object that the UI consumes for display.
+    """
+    estimated_aqi: float
+    official_station_aqi: float
+    risk_level: str = ""
+    category_label: str = ""
+    category_color: str = "#00E400"
+    health_advisory: str = ""
+    confidence: ConfidenceBreakdown = Field(default_factory=ConfidenceBreakdown)
+    hourly_forecast: List[HourlyForecastPoint] = Field(default_factory=list)
+    gemini_features: Optional[GeminiPollutionFeatures] = None
+    satellite_features: Optional[SatelliteFeatures] = None
+    historical_features: Optional[HistoricalFeatures] = None
+    weather_summary: str = ""
+    distance_to_station_km: float = 0.0
+    citizen_report_count: int = 0
+    is_official: bool = False
+    disclaimer: str = (
+        "This is an AI-estimated hyperlocal AQI from the Virtual Sensor Network. "
+        "It combines official monitoring stations, historical pollution patterns, "
+        "weather conditions, satellite observations, and citizen reports. "
+        "It does NOT replace official CPCB monitoring station readings."
+    )
+
+
+# ─────────────────────────────────────────────
+# Municipal Alert
+# ─────────────────────────────────────────────
+
+class MunicipalAlert(BaseModel):
+    """An automated municipal alert generated when thresholds are breached."""
+    alert_id: str = ""
+    alert_type: str = "Pollution Hotspot"
+    estimated_aqi: float = 0.0
+    confidence_pct: int = 0
+    latitude: float = 0.0
+    longitude: float = 0.0
+    reasons: List[str] = Field(default_factory=list)
+    suggested_actions: List[str] = Field(default_factory=list)
+    citizen_complaint_count: int = 0
+    pollution_type: str = "Unknown"
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

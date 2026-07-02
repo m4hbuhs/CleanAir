@@ -21,24 +21,76 @@ CleanAir creates a **Virtual Sensor Network** that estimates hyperlocal air qual
 
 ## 🏗️ Architecture
 
-```
-Citizen Upload (Photo/Voice/Text)
-    ↓
-Gemini 2.5 Flash — Multimodal Classification
-    ↓
-Virtual Sensor Engine — AI Sensor Fusion
-    ├── Nearest AQI Station (Open-Meteo)
-    ├── Weather Conditions (Open-Meteo)
-    ├── Citizen Report Severity
-    └── Historical PM2.5 Trends
-    ↓
-XGBoost Model — Predicted Hyperlocal AQI
-    ↓
-DBSCAN Hotspot Detection → Municipal Dashboard
-    ↓
-Gemini AI — Dispatch Briefs + Chatbot
-    ↓
-EcoToken Rewards → Citizen Wallet
+```mermaid
+flowchart TD
+    %% Define Styles
+    classDef frontend fill:#0f4c3a,stroke:#4CAF50,stroke-width:2px,color:#fff
+    classDef ai fill:#673ab7,stroke:#9c27b0,stroke-width:2px,color:#fff
+    classDef data fill:#1565c0,stroke:#2196f3,stroke-width:2px,color:#fff
+    classDef ml fill:#e65100,stroke:#ff9800,stroke-width:2px,color:#fff
+    classDef core fill:#2e7d32,stroke:#4CAF50,stroke-width:2px,color:#fff
+
+    %% Input Layer
+    subgraph Input ["📱 Citizen Interfaces (Streamlit)"]
+        direction LR
+        UI_Photo["📸 Photo Upload"]
+        UI_Voice["🎙️ Voice Complaint"]
+        UI_Text["📝 Text Report"]
+    end
+    Input ::: frontend
+
+    %% Multimodal AI
+    subgraph Gemini ["🧠 Multimodal AI Layer"]
+        Vision["Vision Classification (Gemini 2.5)"]
+        Speech["Speech-to-Text (Google/Gemini)"]
+    end
+    Gemini ::: ai
+
+    %% External Data
+    subgraph External ["🌍 External APIs"]
+        direction LR
+        API_AQI["Official AQI Stations"]
+        API_Weather["Live Weather Data"]
+        API_History["Historical Trends"]
+    end
+    External ::: data
+
+    %% Core Engine
+    subgraph Core ["⚙️ Virtual Sensor Engine"]
+        Fusion["AI Sensor Fusion"]
+        XGB["XGBoost AQI Predictor"]
+        Plume["Gaussian Plume Dispersion"]
+        DBSCAN["DBSCAN Hotspot Clustering"]
+    end
+    Core ::: ml
+
+    %% Outputs
+    subgraph Dashboard ["🏛️ Municipal & Citizen Outputs"]
+        Dash["Municipal Dashboard & Heatmap"]
+        Tokens["🏆 EcoToken Rewards"]
+        Chatbot["💬 AI Dispatch & Chatbot"]
+    end
+    Dashboard ::: core
+
+    %% Flow Connections
+    UI_Photo --> Vision
+    UI_Voice --> Speech
+    UI_Text --> Fusion
+    Vision -->|Severity/Type| Fusion
+    Speech -->|Transcript| Fusion
+
+    API_AQI --> Fusion
+    API_Weather --> Fusion
+    API_History --> Fusion
+
+    Fusion -->|Engineered Features| XGB
+    XGB -->|Hyperlocal AQI| Plume
+    XGB -->|Hyperlocal AQI| DBSCAN
+
+    DBSCAN -->|Clusters| Dash
+    Plume -->|Dispersion| Dash
+    Dash -->|Context| Chatbot
+    Dash -->|Verified| Tokens
 ```
 
 ---

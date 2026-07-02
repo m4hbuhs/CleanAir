@@ -1,7 +1,9 @@
 """
 📸 Report Incident — Citizen pollution reporting page.
 Supports photo upload, voice recording, and text complaints.
-Uses Gemini for classification and XGBoost for AQI impact prediction.
+Gemini extracts environmental pollution features; the Virtual Sensor Engine
+fuses them with official AQI, weather, historical and satellite data to
+produce a scientifically defensible AI Estimated Hyperlocal AQI.
 """
 
 import streamlit as st
@@ -17,8 +19,9 @@ st.markdown("""
      border: 1px solid rgba(92, 107, 192, 0.3); box-shadow: 0 8px 32px rgba(26, 35, 126, 0.4);">
     <h1 style="color: white; margin: 0; font-size: 2rem;">📸 Report a Pollution Incident</h1>
     <p style="color: #9fa8da; margin-top: 0.5rem;">
-        Where did this happen? Upload a photo or describe the problem. Our AI will classify
-        the pollution type and predict its impact on local air quality.
+        Upload a photo or describe the problem. Gemini extracts environmental features;
+        the Virtual Sensor Network fuses them with official AQI data, weather, and
+        historical patterns to estimate hyperlocal pollution impact.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -202,62 +205,179 @@ if analyze_triggered:
                 st.session_state.report_lon = lon
                 st.toast(f"📍 Location '{res.location_mentioned}' auto-detected from your text!", icon="🧠")
 
-# ── Results & AQI Impact ──────────────────────
+# ── Results & Virtual Sensor Fusion ──────────────────────
 res = st.session_state.current_analysis
 if res:
     st.markdown("---")
-    st.markdown("### 🔬 Step 3: AI Results & Predicted Impact")
+    st.markdown("### 🔬 Step 3: AI Results & Virtual Sensor Estimate")
 
     if res.is_fake_upload:
         st.error("🚫 **Fake Upload Detected!** This evidence does not appear to show a pollution incident.")
     else:
-        # AI Classification
+        # ── Environmental Features Detected by Gemini ──────
+        st.markdown("#### 🤖 Environmental Features Detected")
+        st.caption("Gemini identifies observable pollution indicators — NOT AQI values. These feed into the Virtual Sensor Engine.")
+
         rc1, rc2, rc3, rc4 = st.columns(4)
         with rc1: st.metric("Pollution Type", res.pollution_type)
-        with rc2: 
+        with rc2:
             emoji = {1: "🟢", 2: "🟡", 3: "🟠", 4: "🔴", 5: "⚫"}.get(res.severity, "⚪")
             st.metric("Severity", f"{emoji} {res.severity}/5")
-        with rc3: st.metric("AI Confidence", f"{res.confidence:.0%}")
+        with rc3: st.metric("Gemini Confidence", f"{res.confidence:.0%}")
         with rc4: st.metric("AQI Boost Factor", f"×{res.severity_multiplier:.2f}")
 
+        # Show extended Gemini features if available
+        if res.gemini_pollution_features:
+            gf = res.gemini_pollution_features
+            scores = gf.to_numerical_scores()
+            indicators = []
+            if gf.smoke_detected:   indicators.append("💨 Smoke")
+            if gf.dust_detected:    indicators.append("🌫️ Dust")
+            if gf.burning_detected: indicators.append("🔥 Burning")
+            if gf.construction_detected: indicators.append("🏗️ Construction")
+            if gf.vehicle_exhaust_detected: indicators.append("🚗 Vehicle Exhaust")
+            if indicators:
+                st.info(f"**Detected indicators:** {' · '.join(indicators)}  |  **Visibility:** {gf.visibility}  |  **Road Activity:** {gf.road_activity}")
+
         if res.description:
-            st.info(f"📋 **AI Analysis:** {res.description}")
+            st.caption(f"📋 {res.description}")
 
-        st.markdown("#### 🎯 Predicted AQI Impact at Location")
+        # ── Virtual Sensor Engine Fusion ──────────────────
+        st.markdown("#### 🧠 AI Estimated Hyperlocal AQI")
+        st.caption("Fusing Gemini features with official AQI, weather, historical patterns & satellite data.")
         try:
-            from backend.services.aqi_service import fetch_current_aqi
-            from backend.services.weather_service import fetch_current_weather
-            from backend.ml.feature_engineering import build_payload_from_apis
+            from backend.services.virtual_sensor_engine import VirtualSensorEngine
+            from backend.utils.aqi_categories import classify_aqi
+            import plotly.graph_objects as go
 
-            lat, lon = st.session_state.report_lat, st.session_state.report_lon
-            aqi_data = fetch_current_aqi(lat, lon)
-            weather_data = fetch_current_weather(lat, lon)
-            payload = build_payload_from_apis(aqi_data, weather_data, st.session_state.get("pm2_5_history", []))
+            lat = st.session_state.report_lat
+            lon = st.session_state.report_lon
+            gemini_feats = res.gemini_pollution_features
 
-            engine = st.session_state.get("xgb_model")
-            if engine:
-                prediction = engine.predict(payload, res.severity_multiplier)
+            with st.spinner("Running Virtual Sensor Engine..."):
+                all_reports = db.get_all_reports() if db else []
+                vs_engine = VirtualSensorEngine()
+                vs_result = vs_engine.estimate_aqi(
+                    latitude=lat,
+                    longitude=lon,
+                    gemini_features=gemini_feats,
+                    citizen_reports=all_reports,
+                )
 
-                pc1, pc2, pc3 = st.columns(3)
-                with pc1:
-                    st.metric("Official Station AQI", f"{aqi_data['us_aqi']:.0f}")
-                with pc2:
-                    from backend.utils.aqi_categories import classify_aqi
-                    cat = classify_aqi(prediction.estimated_aqi)
-                    st.metric(
-                        "🧠 AI-Predicted Hyperlocal AQI",
-                        f"{prediction.estimated_aqi:.0f}",
-                        delta=f"{prediction.estimated_aqi - aqi_data['us_aqi']:+.0f} from station",
-                        delta_color="inverse",
-                    )
-                with pc3:
-                    st.metric("Prediction Confidence", f"{prediction.confidence:.0%}")
+            # ── Side-by-side AQI display ──
+            official_cat = classify_aqi(vs_result.official_station_aqi)
+            est_cat = classify_aqi(vs_result.estimated_aqi)
 
-                st.markdown(f"<div class='disclaimer'>⚠️ {prediction.disclaimer}</div>", unsafe_allow_html=True)
-                st.warning(f"🏥 **Health Advisory ({cat.label}):** {cat.health_advisory}")
+            pc1, pc2, pc3 = st.columns(3)
+            with pc1:
+                st.markdown(f"""
+                <div style="background:#1a1f2e; border:2px solid {official_cat.color}40;
+                     border-radius:12px; padding:1rem; text-align:center;">
+                    <div style="color:#888;font-size:0.75rem;text-transform:uppercase;">📡 Official Station AQI</div>
+                    <div style="font-size:2.5rem;font-weight:800;color:{official_cat.color};">{vs_result.official_station_aqi:.0f}</div>
+                    <div style="color:{official_cat.color};font-size:0.85rem;">{official_cat.emoji} {official_cat.label}</div>
+                </div>""", unsafe_allow_html=True)
+            with pc2:
+                delta = vs_result.estimated_aqi - vs_result.official_station_aqi
+                st.markdown(f"""
+                <div style="background:#1a1f2e; border:2px solid {est_cat.color}40;
+                     border-radius:12px; padding:1rem; text-align:center;">
+                    <div style="color:#888;font-size:0.75rem;text-transform:uppercase;">🧠 AI Estimated Hyperlocal AQI</div>
+                    <div style="font-size:2.5rem;font-weight:800;color:{est_cat.color};">{vs_result.estimated_aqi:.0f}</div>
+                    <div style="color:{est_cat.color};font-size:0.85rem;">{est_cat.emoji} {est_cat.label} ({delta:+.0f} from station)</div>
+                </div>""", unsafe_allow_html=True)
+            with pc3:
+                conf = vs_result.confidence
+                conf_color = "#4CAF50" if conf.confidence_label == "High" else "#FF9800" if conf.confidence_label == "Medium" else "#f44336"
+                st.markdown(f"""
+                <div style="background:#1a1f2e; border:2px solid {conf_color}40;
+                     border-radius:12px; padding:1rem; text-align:center;">
+                    <div style="color:#888;font-size:0.75rem;text-transform:uppercase;">🎯 Estimate Confidence</div>
+                    <div style="font-size:2.5rem;font-weight:800;color:{conf_color};">{conf.overall_pct}%</div>
+                    <div style="color:{conf_color};font-size:0.85rem;">{conf.confidence_label} Confidence</div>
+                </div>""", unsafe_allow_html=True)
+
+            # Weather + data sources
+            if vs_result.weather_summary:
+                st.caption(f"🌤️ {vs_result.weather_summary}  ·  Citizen reports nearby: {vs_result.citizen_report_count}")
+
+            # ── Health Advisory ──
+            st.warning(f"🏥 **Health Advisory ({est_cat.label}):** {est_cat.health_advisory}")
+
+            # ── Confidence factor breakdown ──
+            with st.expander("🔍 Confidence Factor Breakdown", expanded=False):
+                c_cols = st.columns(5)
+                labels = ["Station\nProximity", "Citizen\nReports", "Gemini\nConfidence", "Data\nFreshness", "Feature\nCompleteness"]
+                values = [
+                    conf.station_distance_score,
+                    conf.citizen_report_score,
+                    conf.gemini_confidence_score,
+                    conf.data_freshness_score,
+                    conf.missing_features_score,
+                ]
+                for col, label, val in zip(c_cols, labels, values):
+                    with col:
+                        st.metric(label.replace("\n", " "), f"{val:.0%}")
+
+            # ── 24-hour Forecast Chart ──
+            if vs_result.hourly_forecast and len(vs_result.hourly_forecast) > 1:
+                st.markdown("#### 📈 24-Hour AQI Forecast")
+                hours = [f"+{p.hour_offset}h" for p in vs_result.hourly_forecast]
+                aqis  = [p.estimated_aqi for p in vs_result.hourly_forecast]
+                confs = [p.confidence * 100 for p in vs_result.hourly_forecast]
+
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=hours, y=aqis, mode="lines+markers",
+                    name="Est. AQI", line=dict(color=est_cat.color, width=2.5),
+                    marker=dict(size=5),
+                ))
+                fig.add_trace(go.Scatter(
+                    x=hours, y=confs, mode="lines",
+                    name="Confidence %", line=dict(color="#888", width=1, dash="dot"),
+                    yaxis="y2",
+                ))
+                fig.update_layout(
+                    height=260, margin=dict(l=20, r=20, t=10, b=20),
+                    paper_bgcolor="#1a1f2e", plot_bgcolor="#1a1f2e",
+                    font=dict(color="#ccc"), showlegend=True,
+                    legend=dict(orientation="h", y=1.1),
+                    yaxis=dict(title="AQI", gridcolor="#333"),
+                    yaxis2=dict(title="Confidence %", overlaying="y", side="right", gridcolor="#222"),
+                    xaxis=dict(gridcolor="#333"),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # ── Disclaimer ──
+            st.markdown("""
+            <div style="background:rgba(255,152,0,0.08);border-left:4px solid #FF9800;
+                 padding:0.7rem 1rem;border-radius:0 8px 8px 0;font-size:0.8rem;color:#FFB74D;margin-top:0.5rem;">
+                ⚠️ <strong>Disclaimer:</strong> This is an AI-estimated hyperlocal AQI from the Virtual Sensor Network.
+                It combines official monitoring stations, historical pollution patterns, weather conditions,
+                satellite observations, and citizen reports. It does NOT replace official CPCB readings.
+            </div>""", unsafe_allow_html=True)
 
         except Exception as e:
-            st.warning(f"Could not generate AQI prediction: {e}")
+            st.warning(f"Virtual Sensor Engine unavailable: {e}. Showing basic prediction.")
+            try:
+                from backend.services.aqi_service import fetch_current_aqi
+                from backend.services.weather_service import fetch_current_weather
+                from backend.ml.feature_engineering import build_payload_from_apis
+                from backend.utils.aqi_categories import classify_aqi
+                lat, lon = st.session_state.report_lat, st.session_state.report_lon
+                aqi_data = fetch_current_aqi(lat, lon)
+                weather_data = fetch_current_weather(lat, lon)
+                payload = build_payload_from_apis(aqi_data, weather_data, [])
+                engine = st.session_state.get("xgb_model")
+                if engine:
+                    prediction = engine.predict(payload, res.severity_multiplier)
+                    cat = classify_aqi(prediction.estimated_aqi)
+                    pc1, pc2 = st.columns(2)
+                    with pc1: st.metric("Official Station AQI", f"{aqi_data.get('us_aqi', 0):.0f}")
+                    with pc2: st.metric("🧠 AI Estimated Hyperlocal AQI", f"{prediction.estimated_aqi:.0f}")
+                    st.warning(f"🏥 **Health Advisory ({cat.label}):** {cat.health_advisory}")
+            except Exception:
+                pass
 
         # ── Submit Report ──────────────────────
         st.markdown("---")

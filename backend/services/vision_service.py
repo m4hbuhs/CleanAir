@@ -1,6 +1,9 @@
 """
 Vision classification service using Gemini 2.5 Flash multimodal.
-Classifies citizen-uploaded images for pollution incidents.
+
+Extracts environmental pollution features from citizen-uploaded images.
+Gemini NEVER outputs AQI — it extracts observable pollution indicators
+that become ML features for the Virtual Sensor Engine.
 """
 
 import json
@@ -11,7 +14,7 @@ from PIL import Image
 from google import genai
 
 from backend.config import get_settings
-from backend.models.schemas import VisionClassification
+from backend.models.schemas import VisionClassification, GeminiPollutionFeatures
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +27,8 @@ def classify_pollution_image(
     """
     Classify a citizen-uploaded image using Gemini multimodal analysis.
 
-    Detects: Smoke, Dust, Fire, Garbage Burning, Construction Pollution,
-    Industrial Smoke, Vehicle Exhaust.
+    Extracts environmental pollution features — NOT AQI values.
+    Returns a backward-compatible VisionClassification object.
 
     Args:
         image: PIL Image object from citizen upload
@@ -34,7 +37,7 @@ def classify_pollution_image(
 
     Returns:
         VisionClassification with pollution type, severity, confidence,
-        and severity multiplier for the XGBoost fusion pipeline.
+        and severity multiplier derived from extracted features.
     """
     settings = get_settings()
 
@@ -66,14 +69,41 @@ def classify_pollution_image(
 
         parsed = json.loads(raw_text)
 
-        return VisionClassification(
-            pollution_type=parsed.get("pollution_type", "Unclassified"),
-            severity=max(1, min(5, int(parsed.get("severity", 3)))),
+        # Build GeminiPollutionFeatures from the new output schema
+        gemini_features = GeminiPollutionFeatures(
+            pollution_type=parsed.get("pollution_type", "Unknown"),
+            severity=parsed.get("severity", "Moderate"),
             confidence=max(0.0, min(1.0, float(parsed.get("confidence", 0.5)))),
-            severity_multiplier=max(1.0, min(1.5, float(parsed.get("severity_multiplier", 1.1)))),
+            visibility=parsed.get("visibility", "Normal"),
+            road_activity=parsed.get("road_activity", "Normal"),
+            construction_detected=bool(parsed.get("construction_detected", False)),
+            smoke_detected=bool(parsed.get("smoke_detected", False)),
+            dust_detected=bool(parsed.get("dust_detected", False)),
+            burning_detected=bool(parsed.get("burning_detected", False)),
+            vehicle_exhaust_detected=bool(parsed.get("vehicle_exhaust_detected", False)),
             description=parsed.get("description", ""),
             is_fake_upload=bool(parsed.get("is_fake_upload", False)),
             bounding_box_description=parsed.get("bounding_box_description", ""),
+            location_mentioned=parsed.get("location_mentioned"),
+        )
+
+        # Convert severity string to integer for backward compatibility
+        severity_int = _severity_to_int(gemini_features.severity)
+
+        # Compute severity multiplier from features (not directly from Gemini)
+        severity_multiplier = gemini_features.to_severity_multiplier()
+
+        return VisionClassification(
+            pollution_type=gemini_features.pollution_type,
+            severity=severity_int,
+            confidence=gemini_features.confidence,
+            severity_multiplier=severity_multiplier,
+            description=gemini_features.description,
+            is_fake_upload=gemini_features.is_fake_upload,
+            bounding_box_description=gemini_features.bounding_box_description,
+            location_mentioned=gemini_features.location_mentioned,
+            # Store extended features for the Virtual Sensor Engine
+            gemini_pollution_features=gemini_features,
         )
 
     except json.JSONDecodeError as e:
@@ -111,7 +141,7 @@ def classify_text_only(
 
     prompt = f"""
     You are an environmental pollution classifier for an Indian smart city platform.
-    Analyze this citizen complaint and extract structured attributes.
+    Analyze this citizen complaint and extract structured environmental features.
 
     Citizen complaint: "{description}"
 
@@ -132,13 +162,34 @@ def classify_text_only(
 
         parsed = json.loads(raw_text)
 
-        return VisionClassification(
-            pollution_type=parsed.get("pollution_type", "Unclassified"),
-            severity=max(1, min(5, int(parsed.get("severity", 3)))),
+        gemini_features = GeminiPollutionFeatures(
+            pollution_type=parsed.get("pollution_type", "Unknown"),
+            severity=parsed.get("severity", "Moderate"),
             confidence=max(0.0, min(1.0, float(parsed.get("confidence", 0.5)))),
-            severity_multiplier=max(1.0, min(1.5, float(parsed.get("severity_multiplier", 1.1)))),
+            visibility=parsed.get("visibility", "Normal"),
+            road_activity=parsed.get("road_activity", "Normal"),
+            construction_detected=bool(parsed.get("construction_detected", False)),
+            smoke_detected=bool(parsed.get("smoke_detected", False)),
+            dust_detected=bool(parsed.get("dust_detected", False)),
+            burning_detected=bool(parsed.get("burning_detected", False)),
+            vehicle_exhaust_detected=bool(parsed.get("vehicle_exhaust_detected", False)),
             description=parsed.get("description", ""),
             is_fake_upload=bool(parsed.get("is_fake_upload", False)),
+            location_mentioned=parsed.get("location_mentioned"),
+        )
+
+        severity_int = _severity_to_int(gemini_features.severity)
+        severity_multiplier = gemini_features.to_severity_multiplier()
+
+        return VisionClassification(
+            pollution_type=gemini_features.pollution_type,
+            severity=severity_int,
+            confidence=gemini_features.confidence,
+            severity_multiplier=severity_multiplier,
+            description=gemini_features.description,
+            is_fake_upload=gemini_features.is_fake_upload,
+            location_mentioned=gemini_features.location_mentioned,
+            gemini_pollution_features=gemini_features,
         )
 
     except Exception as e:
@@ -152,12 +203,20 @@ def classify_text_only(
         )
 
 
+def _severity_to_int(severity_str: str) -> int:
+    """Convert severity string to 1–5 integer for backward compatibility."""
+    mapping = {"Low": 2, "Moderate": 3, "High": 4, "Critical": 5}
+    return mapping.get(severity_str, 3)
+
+
 # ── Prompt templates ──────────────────────────
 
 _SYSTEM_PROMPT = """You are a computer vision and environmental analysis agent for the 'CleanAir & Clear Streets' AI platform in India.
-You analyze citizen-uploaded images and text reports to classify pollution incidents.
+You analyze citizen-uploaded images and text reports to extract environmental pollution features.
 
-Your detection categories:
+IMPORTANT: You do NOT predict AQI values. You extract observable pollution indicators from images.
+
+Your detection capabilities:
 - Smoke (visible smoke plumes from any source)
 - Dust (construction dust, road dust, agricultural)
 - Fire (active flames, burning)
@@ -169,13 +228,19 @@ Your detection categories:
 If the image shows NO pollution or is clearly unrelated (selfie, food, etc.), mark is_fake_upload as true.
 If the image is ambiguous, give a lower confidence score."""
 
-_EXTRACTION_PROMPT = """Extract attributes into a raw minified JSON object with these exact keys:
+_EXTRACTION_PROMPT = """Extract environmental pollution features into a raw minified JSON object with these exact keys:
 {
-  "pollution_type": "(string: one of Smoke, Dust, Fire, Garbage Burning, Construction Pollution, Industrial Smoke, Vehicle Exhaust, or Unclassified)",
-  "severity": "(integer: 1=minimal, 2=low, 3=moderate, 4=high, 5=critical)",
+  "pollution_type": "(string: one of Smoke, Dust, Fire, Garbage Burning, Construction Dust, Industrial Smoke, Vehicle Exhaust, or Unknown)",
+  "severity": "(string: one of Low, Moderate, High, Critical)",
   "confidence": "(float: 0.0 to 1.0, how confident you are in the classification)",
-  "severity_multiplier": "(float: 1.0 to 1.5, how much to boost the AQI prediction. 1.0=no boost, 1.5=severe incident)",
-  "description": "(string: brief description of what you see)",
+  "visibility": "(string: one of Clear, Normal, Low, Very Low — how visibility is affected)",
+  "road_activity": "(string: one of None, Light, Normal, Heavy, Gridlock — traffic level visible)",
+  "construction_detected": "(boolean: true if construction activity is visible)",
+  "smoke_detected": "(boolean: true if smoke plumes are visible)",
+  "dust_detected": "(boolean: true if dust clouds/haze are visible)",
+  "burning_detected": "(boolean: true if active burning/fire is visible)",
+  "vehicle_exhaust_detected": "(boolean: true if dense traffic exhaust is visible)",
+  "description": "(string: brief description of what you observe)",
   "is_fake_upload": "(boolean: true if image shows no pollution or is unrelated)",
   "bounding_box_description": "(string: where in the image the pollution is visible, e.g. 'center of frame, smoke rising from left')",
   "location_mentioned": "(string: extract the geographic location mentioned in the text and CLEAN/FORMAT it into a standard address with spaces, e.g., 'Uttam Nagar, New Delhi, India', or null if none)"

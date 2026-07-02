@@ -1,13 +1,16 @@
 """
-Virtual Sensor Engine — The core of the CleanAir platform.
+Virtual Sensor Grid — AQI Surface Generator.
 
-Creates a network of "virtual sensors" by fusing:
+Creates a network of "virtual sensors" across a geographic grid by fusing:
 - Nearest official AQI station data
 - Citizen reports (vision-classified incidents)
 - Weather conditions
 - Distance-based interpolation
 
 Produces hyperlocal AQI estimates at 500m grid resolution.
+The point-level AQI estimation is handled by VirtualSensorEngine
+in virtual_sensor_engine.py. This module creates the spatial surface.
+
 This does NOT claim to directly measure AQI — it uses AI-assisted
 sensor fusion to estimate pollution at unmeasured locations.
 """
@@ -32,7 +35,7 @@ from backend.utils.aqi_categories import classify_aqi
 logger = logging.getLogger(__name__)
 
 
-class VirtualSensorEngine:
+class VirtualSensorGrid:
     """
     Generates hyperlocal AQI estimates across a geographic grid.
 
@@ -211,7 +214,7 @@ def generate_quick_surface(
     Convenience function for quick AQI surface generation.
     Uses default settings for grid resolution and radius.
     """
-    engine = VirtualSensorEngine()
+    engine = VirtualSensorGrid()
     return engine.generate_aqi_surface(
         center_lat=center_lat,
         center_lon=center_lon,

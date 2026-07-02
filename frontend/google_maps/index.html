@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart City GIS Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Marker Clusterer -->
+    <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
+    <!-- INJECT_CSS -->
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="top-panel" class="glass-panel">
+        <input type="text" id="search-box" placeholder="Search city, area, road...">
+    </div>
+
+    <div id="layer-panel" class="glass-panel">
+        <h3>GIS Layers</h3>
+        <label><input type="checkbox" id="layer-official" checked> Official AQI</label>
+        <label><input type="checkbox" id="layer-estimated" checked> AI Estimated AQI</label>
+        <label><input type="checkbox" id="layer-reports" checked> Citizen Reports</label>
+        <label><input type="checkbox" id="layer-hotspots" checked> Hotspots</label>
+        <label><input type="checkbox" id="layer-alerts" checked> Municipal Alerts</label>
+    </div>
+
+    <div id="legend-panel" class="glass-panel">
+        <h3>AQI Legend</h3>
+        <div class="legend-row"><span class="color-box" style="background:#00e400;"></span> Good (0-50)</div>
+        <div class="legend-row"><span class="color-box" style="background:#ffff00;"></span> Satisfactory (51-100)</div>
+        <div class="legend-row"><span class="color-box" style="background:#ff7e00;"></span> Moderate (101-200)</div>
+        <div class="legend-row"><span class="color-box" style="background:#ff0000;"></span> Poor (201-300)</div>
+        <div class="legend-row"><span class="color-box" style="background:#8f3f97;"></span> Very Poor (301-400)</div>
+        <div class="legend-row"><span class="color-box" style="background:#7e0023;"></span> Severe (401+)</div>
+    </div>
+
+    <!-- INJECT_DATA -->
+    
+    <!-- Load Google Maps API using the injected key -->
+    <script>
+        if (window.MAP_DATA && window.MAP_DATA.api_key) {
+            const script = document.createElement("script");
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${window.MAP_DATA.api_key}&libraries=places,marker&callback=initMap`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+        } else {
+            console.error("Google Maps API Key missing in MAP_DATA.");
+            document.getElementById('map').innerHTML = '<div style="color:white; padding:20px;">Google Maps API Key not configured.</div>';
+        }
+    </script>
+
+    <!-- INJECT_JS -->
+</body>
+</html>

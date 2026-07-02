@@ -286,8 +286,17 @@ class TestRewardEngine:
         from backend.services.reward_service import RewardEngine
         from backend.models.schemas import CitizenReport, VisionClassification, IncidentSeverity
         engine = RewardEngine()
+        from backend.models.schemas import VisionClassification, PollutionType, IncidentSeverity, CitizenReport
+        engine = RewardEngine()
         report = CitizenReport(latitude=28.6, longitude=77.2, severity=IncidentSeverity(4))
-        classification = VisionClassification(is_fake_upload=True)
+        classification = VisionClassification(
+            is_fake_upload=True,
+            pollution_type=PollutionType.UNKNOWN,
+            severity=IncidentSeverity.MINIMAL,
+            confidence=0.0,
+            severity_multiplier=1.0,
+            description="Fake"
+        )
         tokens = engine.calculate_tokens(report, classification)
         assert tokens == 0
 
@@ -376,6 +385,120 @@ class TestPlumeModel:
         from backend.services.plume_service import generate_plume_geometry
         df = generate_plume_geometry(28.6, 77.2, wind_u=0.0, wind_v=0.0, aqi_weight=150)
         assert len(df) > 0  # Should still generate radial spread
+
+# ─────────────────────────────────────────────
+# Test: Virtual Sensor Network Components
+# ─────────────────────────────────────────────
+
+class TestGeminiPollutionFeatures:
+    def test_to_numerical_scores_default(self):
+        from backend.models.schemas import GeminiPollutionFeatures
+        features = GeminiPollutionFeatures(pollution_type="Unknown", severity="Low", confidence=0.8)
+        scores = features.to_numerical_scores()
+        assert scores["severity_score"] == 0.2
+        assert scores["dust_score"] == 0.0
+        assert scores["smoke_score"] == 0.0
+        assert scores["construction_score"] == 0.0
+
+    def test_to_numerical_scores_high(self):
+        from backend.models.schemas import GeminiPollutionFeatures
+        features = GeminiPollutionFeatures(
+            pollution_type="Construction Dust", 
+            severity="High", 
+            confidence=0.9,
+            construction_detected=True,
+            dust_detected=True
+        )
+        scores = features.to_numerical_scores()
+        assert scores["severity_score"] == 0.8
+        assert scores["dust_score"] == 1.0
+        assert scores["construction_score"] == 1.0
+
+
+class TestConfidenceScoring:
+    def test_high_confidence(self):
+        from backend.ml.confidence import compute_confidence
+        conf = compute_confidence(
+            distance_to_station_km=1.0, 
+            citizen_report_count=5, 
+            gemini_confidence=0.9, 
+            data_freshness_minutes=5, 
+            missing_feature_count=0
+        )
+        assert conf.overall_pct > 80
+        assert conf.confidence_label == "High"
+
+    def test_low_confidence(self):
+        from backend.ml.confidence import compute_confidence
+        conf = compute_confidence(
+            distance_to_station_km=15.0, 
+            citizen_report_count=0, 
+            gemini_confidence=None, 
+            data_freshness_minutes=120, 
+            missing_feature_count=4
+        )
+        assert conf.overall_pct < 50
+        assert conf.confidence_label == "Low"
+
+
+class TestAlertEngine:
+    def test_evaluate_alerts_trigger(self):
+        from backend.services.alert_engine import evaluate_alerts
+        from backend.models.schemas import CitizenReport, IncidentSeverity, PollutionType
+        
+        # 3 reports to cross the threshold
+        reports = [
+            CitizenReport(latitude=28.6, longitude=77.2, severity=IncidentSeverity.HIGH, pollution_type=PollutionType.CONSTRUCTION)
+            for _ in range(4)
+        ]
+        alerts = evaluate_alerts(
+            estimated_aqi=160, 
+            confidence_pct=75, 
+            citizen_reports=reports, 
+            latitude=28.6, 
+            longitude=77.2
+        )
+        assert len(alerts) > 0
+        assert alerts[0].estimated_aqi == 160
+        assert "Construction" in alerts[0].pollution_type
+
+    def test_evaluate_alerts_no_trigger(self):
+        from backend.services.alert_engine import evaluate_alerts
+        alerts = evaluate_alerts(
+            estimated_aqi=100, 
+            confidence_pct=80, 
+            citizen_reports=[], 
+            latitude=28.6, 
+            longitude=77.2
+        )
+        assert len(alerts) == 0
+
+
+class TestSatelliteService:
+    def test_mock_satellite_provider(self):
+        from backend.services.satellite_service import fetch_satellite_features
+        features = fetch_satellite_features(28.6, 77.2)
+        assert features is not None
+        assert features.aerosol_optical_depth >= 0
+
+
+class TestVirtualSensorEngine:
+    def test_estimate_aqi_fallback(self):
+        from backend.services.virtual_sensor_engine import VirtualSensorEngine
+        engine = VirtualSensorEngine()
+        # With no DB/API mocks, it should still return a result
+        result = engine.estimate_aqi(28.6, 77.2)
+        assert result.estimated_aqi > 0
+        assert result.confidence is not None
+
+
+class TestHourlyForecast:
+    def test_hourly_forecast(self):
+        from backend.services.virtual_sensor_engine import VirtualSensorEngine
+        engine = VirtualSensorEngine()
+        result = engine.estimate_aqi(28.6, 77.2)
+        assert len(result.hourly_forecast) > 0
+        assert result.hourly_forecast[0].hour_offset == 0  # Starts at hour 0 (current)
 
 
 if __name__ == "__main__":

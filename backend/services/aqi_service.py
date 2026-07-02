@@ -132,6 +132,62 @@ def fetch_historical_aqi(
         return []
 
 
+def fetch_hourly_aqi(
+    latitude: float,
+    longitude: float,
+    hours: int = 48,
+    timeout: Optional[int] = None,
+) -> list[float]:
+    """
+    Fetch the last N hours of hourly US AQI values for time-series features.
+
+    Used by the Virtual Sensor Engine to build historical features
+    (rolling averages, same-hour-yesterday, etc.).
+
+    Args:
+        latitude: Location latitude
+        longitude: Location longitude
+        hours: Number of past hours to fetch (default 48)
+        timeout: Request timeout in seconds
+
+    Returns:
+        List of hourly US AQI values, oldest first. Empty list on failure.
+    """
+    settings = get_settings()
+    timeout = timeout or settings.api_timeout_seconds
+
+    from datetime import datetime, timedelta
+    end_date = datetime.utcnow().strftime("%Y-%m-%d")
+    days_needed = (hours // 24) + 2  # Extra day for safety
+    start_date = (datetime.utcnow() - timedelta(days=days_needed)).strftime("%Y-%m-%d")
+
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": "us_aqi,pm2_5",
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+    try:
+        response = requests.get(_BASE_URL, params=params, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+
+        hourly = data.get("hourly", {})
+        aqi_values = hourly.get("us_aqi", [])
+
+        # Filter out None values and convert to floats
+        result = [float(v) for v in aqi_values if v is not None]
+
+        # Return last N hours
+        return result[-hours:] if len(result) > hours else result
+
+    except requests.RequestException as e:
+        logger.error("Failed to fetch hourly AQI: %s", e)
+        return []
+
+
 def _default_aqi_response() -> dict:
     """Fallback response when API returns no data."""
     return {

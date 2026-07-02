@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     # --- API Keys ---
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
+    google_maps_api_key: str = Field(default="", alias="GOOGLE_MAPS_API_KEY")
     google_cloud_project: str = Field(default="", alias="GOOGLE_CLOUD_PROJECT")
 
     # --- Firebase ---
@@ -64,6 +65,17 @@ class Settings(BaseSettings):
     supported_languages: list[str] = [
         "hi-IN", "en-IN", "mr-IN", "gu-IN", "ta-IN", "te-IN", "kn-IN", "bn-IN"
     ]
+
+    # --- Virtual Sensor Engine: Alert Thresholds ---
+    alert_aqi_threshold: int = 150
+    alert_complaint_threshold: int = 3
+    alert_confidence_threshold: float = 0.60
+
+    # --- Virtual Sensor Engine: Data Providers ---
+    satellite_provider: str = "mock"  # "mock" | "earth_engine" | "cams"
+
+    # --- Virtual Sensor Engine: Forecasting ---
+    forecast_hours: int = 24
 
     # --- API Timeouts ---
     api_timeout_seconds: int = 10

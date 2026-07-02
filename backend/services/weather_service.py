@@ -117,6 +117,80 @@ def fetch_weather_forecast(
         return []
 
 
+def fetch_hourly_weather_forecast(
+    latitude: float,
+    longitude: float,
+    hours: int = 24,
+    timeout: Optional[int] = None,
+) -> list[dict]:
+    """
+    Fetch hourly weather forecast for the next N hours.
+
+    Used by the Virtual Sensor Engine for recursive hourly
+    AQI forecasting. Returns weather conditions per hour.
+
+    Args:
+        latitude: Location latitude
+        longitude: Location longitude
+        hours: Number of forecast hours (default 24)
+        timeout: Request timeout in seconds
+
+    Returns:
+        List of hourly dicts with keys: temperature_2m, precipitation,
+        wind_speed_10m, wind_direction_10m, relative_humidity_2m,
+        surface_pressure, cloud_cover.
+    """
+    settings = get_settings()
+    timeout = timeout or settings.api_timeout_seconds
+
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": (
+            "temperature_2m,precipitation,wind_speed_10m,"
+            "wind_direction_10m,relative_humidity_2m,"
+            "surface_pressure,cloud_cover"
+        ),
+        "forecast_days": max(1, (hours // 24) + 1),
+    }
+
+    try:
+        response = requests.get(_BASE_URL, params=params, timeout=timeout)
+        response.raise_for_status()
+        data = response.json()
+
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+
+        forecasts = []
+        for i in range(min(len(times), hours)):
+            forecasts.append({
+                "time": times[i],
+                "temperature_2m": _safe_float(hourly.get("temperature_2m", []), i, 30.0),
+                "precipitation": _safe_float(hourly.get("precipitation", []), i, 0.0),
+                "wind_speed_10m": _safe_float(hourly.get("wind_speed_10m", []), i, 5.0),
+                "wind_direction_10m": _safe_float(hourly.get("wind_direction_10m", []), i, 180.0),
+                "relative_humidity_2m": _safe_float(hourly.get("relative_humidity_2m", []), i, 50.0),
+                "surface_pressure": _safe_float(hourly.get("surface_pressure", []), i, 1013.0),
+                "cloud_cover": _safe_float(hourly.get("cloud_cover", []), i, 50.0),
+            })
+
+        return forecasts
+
+    except requests.RequestException as e:
+        logger.error("Failed to fetch hourly weather forecast: %s", e)
+        return []
+
+
+def _safe_float(values: list, index: int, default: float) -> float:
+    """Safely extract a float from a list by index."""
+    try:
+        val = values[index]
+        return float(val) if val is not None else default
+    except (IndexError, TypeError):
+        return default
+
+
 def _default_weather() -> dict:
     """Fallback with typical Delhi values."""
     return {
