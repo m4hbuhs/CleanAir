@@ -68,25 +68,27 @@ class MockSatelliteProvider(SatelliteProvider):
             logger.error("Failed to load mock satellite data: %s", e)
             self._data = []
 
+    def _get_nearest_cell(self, latitude: float, longitude: float) -> dict:
+        """Helper to find the nearest mock cell."""
+        if not self._data:
+            return {}
+
+        best_cell = self._data[0]
+        best_dist = float("inf")
+        for cell in self._data:
+            dist = haversine_km(latitude, longitude, cell["latitude"], cell["longitude"])
+            if dist < best_dist:
+                best_dist = dist
+                best_cell = cell
+        return best_cell
+
     def fetch(self, latitude: float, longitude: float) -> SatelliteFeatures:
         """
         Find the nearest mock satellite grid cell and return its features.
         """
-        if not self._data:
+        best_cell = self._get_nearest_cell(latitude, longitude)
+        if not best_cell:
             return SatelliteFeatures(source="mock_unavailable")
-
-        # Find nearest cell
-        best_cell = self._data[0]
-        best_dist = float("inf")
-
-        for cell in self._data:
-            dist = haversine_km(
-                latitude, longitude,
-                cell["latitude"], cell["longitude"],
-            )
-            if dist < best_dist:
-                best_dist = dist
-                best_cell = cell
 
         return SatelliteFeatures(
             aerosol_optical_depth=float(best_cell.get("aod", 0.0)),
@@ -98,6 +100,32 @@ class MockSatelliteProvider(SatelliteProvider):
             source=str(best_cell.get("source", "mock")),
         )
 
+    def detect_smoke(self, latitude: float, longitude: float) -> bool:
+        """Check if smoke is detected via spectral analysis in satellite imagery."""
+        cell = self._get_nearest_cell(latitude, longitude)
+        return bool(cell.get("smoke_detected", False))
+
+    def detect_fire(self, latitude: float, longitude: float) -> bool:
+        """Check if thermal anomaly/fire is detected."""
+        cell = self._get_nearest_cell(latitude, longitude)
+        return bool(cell.get("thermal_anomaly", False))
+
+    def detect_dust(self, latitude: float, longitude: float) -> bool:
+        """Check if heavy dust (high AOD) is detected."""
+        cell = self._get_nearest_cell(latitude, longitude)
+        aod = float(cell.get("aod", 0.0))
+        return aod > 0.6  # High aerosol optical depth threshold for dust
+
+    def generate_satellite_features(self, latitude: float, longitude: float) -> dict:
+        """Generate a complete dictionary of satellite-derived features."""
+        features = self.fetch(latitude, longitude)
+        return {
+            "satellite_smoke": int(features.smoke_detected),
+            "satellite_fire": int(features.thermal_anomaly),
+            "satellite_dust": 1 if features.dust > 5.0 else 0,
+            "satellite_aod": features.aerosol_optical_depth,
+            "satellite_temp": features.land_surface_temp
+        }
 
 # ── Provider registry ──────────────────────────
 

@@ -23,7 +23,16 @@ window.initMap = async function() {
         mapTypeControl: false,
         streetViewControl: false,
         fullscreenControl: false,
-        mapId: 'CLEANAIR_MAP_ID' // Required for AdvancedMarkers
+        mapId: 'CLEANAIR_MAP_ID', // Required for AdvancedMarkers
+        restriction: {
+            latLngBounds: {
+                north: 28.9,
+                south: 28.3,
+                east: 77.5,
+                west: 76.8
+            },
+            strictBounds: true
+        }
     });
 
     // Initialize Managers

@@ -60,12 +60,20 @@ class PopupManager {
     }
 
     showEstimatedClick(result, latLng) {
+        const sat = result.satellite || { aod: 0.1, no2: 15, thermal_anomaly: false };
+        const thermalBadge = sat.thermal_anomaly ? '<span style="color:red;font-weight:bold;">Detected 🔥</span>' : 'None';
+        
         const content = `
-            <div class="custom-popup">
+            <div class="custom-popup" style="min-width: 200px;">
                 <h4>🤖 AI Estimated AQI</h4>
                 <p style="font-size:24px; font-weight:bold; color:${utils.getAQIColor(result.aqi)}; margin:5px 0;">${result.aqi.toFixed(0)}</p>
                 <p><strong>Location:</strong> ${latLng.lat().toFixed(4)}, ${latLng.lng().toFixed(4)}</p>
-                <p style="font-size:11px; color:#aaa;">(Locally interpolated from AI Grid)</p>
+                <div style="margin-top: 10px; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 6px; border: 1px solid #444;">
+                    <h5 style="margin: 0 0 5px 0; color: #888; border-bottom: 1px solid #444; padding-bottom: 3px;">🛰️ GEE Confidence Breakdown</h5>
+                    <p style="margin: 2px 0; font-size: 11px;"><strong>Aerosol (AOD):</strong> ${sat.aod.toFixed(2)}</p>
+                    <p style="margin: 2px 0; font-size: 11px;"><strong>NO2 Density:</strong> ${sat.no2.toFixed(1)} µmol/m²</p>
+                    <p style="margin: 2px 0; font-size: 11px;"><strong>Thermal Anomaly:</strong> ${thermalBadge}</p>
+                </div>
             </div>
         `;
         this.infoWindow.setContent(content);

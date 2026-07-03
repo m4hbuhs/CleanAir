@@ -441,3 +441,24 @@ class MunicipalAlert(BaseModel):
     citizen_complaint_count: int = 0
     pollution_type: str = "Unknown"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+# ─────────────────────────────────────────────
+# Unified Pollution Observation
+# ─────────────────────────────────────────────
+
+class UnifiedPollutionObservation(BaseModel):
+    """
+    Central unified observation object collecting data from all sources.
+    Every module consumes this object instead of reading data independently.
+    """
+    latitude: float
+    longitude: float
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    citizen_reports: List[CitizenReport] = Field(default_factory=list)
+    satellite_features: Optional[SatelliteFeatures] = None
+    weather_data: dict = Field(default_factory=dict)
+    official_aqi: Optional[float] = None
+    historical_features: Optional[HistoricalFeatures] = None
+    gemini_features: Optional[GeminiPollutionFeatures] = None
+    virtual_sensor_result: Optional[VirtualSensorResult] = None

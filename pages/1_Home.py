@@ -130,40 +130,34 @@ with qa1:
         <div style="color: #666; font-size: 0.8rem; margin-top: 0.3rem;">Upload photo or describe pollution</div>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/2_📸_Report_Incident.py", label="Go to Reports →", use_container_width=True)
+    st.page_link("pages/2_Report_Incident.py", label="Go to Reports →", use_container_width=True)
 
 with qa2:
     st.markdown("""
-    <div style="background: linear-gradient(145deg, #1b5e2022, #2e7d32aa);
-         border: 1px solid #4CAF5044; border-radius: 12px; padding: 1.5rem; text-align: center;">
-        <div style="font-size: 2.5rem;">🗺️</div>
-        <div style="font-weight: 600; color: #a5d6a7; margin-top: 0.5rem;">Live Map</div>
-        <div style="color: #666; font-size: 0.8rem; margin-top: 0.3rem;">Heatmap & hotspot clusters</div>
+    <div style="background-color:rgba(255,255,255,0.05); padding:2rem; border-radius:10px; border:1px solid #4CAF50; height:100%;">
+        <h3 style="color:#4CAF50;">🗺️ Live Map</h3>
+        <p>View real-time pollution hotspots, municipal alerts, and AI-estimated AQI layers on the 250m virtual sensor grid.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/3_🗺️_Live_Map.py", label="View Map →", use_container_width=True)
+    st.page_link("pages/3_Live_Map.py", label="View Map →", use_container_width=True)
 
 with qa3:
     st.markdown("""
-    <div style="background: linear-gradient(145deg, #f57f1722, #ff8f00aa);
-         border: 1px solid #FFB30044; border-radius: 12px; padding: 1.5rem; text-align: center;">
-        <div style="font-size: 2.5rem;">🏆</div>
-        <div style="font-weight: 600; color: #fff9c4; margin-top: 0.5rem;">EcoTokens</div>
-        <div style="color: #666; font-size: 0.8rem; margin-top: 0.3rem;">Check your rewards & badges</div>
+    <div style="background-color:rgba(255,255,255,0.05); padding:2rem; border-radius:10px; border:1px solid #FF9800; height:100%;">
+        <h3 style="color:#FF9800;">🏆 EcoTokens</h3>
+        <p>Earn tokens for reporting incidents. Compete on the leaderboard and redeem tokens for local municipal rewards.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/5_🏆_EcoTokens.py", label="View Tokens →", use_container_width=True)
+    st.page_link("pages/5_EcoTokens.py", label="View Tokens →", use_container_width=True)
 
 with qa4:
     st.markdown("""
-    <div style="background: linear-gradient(145deg, #4a148c22, #6a1b9aaa);
-         border: 1px solid #ab47bc44; border-radius: 12px; padding: 1.5rem; text-align: center;">
-        <div style="font-size: 2.5rem;">💬</div>
-        <div style="font-weight: 600; color: #ce93d8; margin-top: 0.5rem;">AI Assistant</div>
-        <div style="color: #666; font-size: 0.8rem; margin-top: 0.3rem;">Ask about air quality & health</div>
+    <div style="background-color:rgba(255,255,255,0.05); padding:2rem; border-radius:10px; border:1px solid #9c27b0; height:100%;">
+        <h3 style="color:#9c27b0;">💬 AI Assistant</h3>
+        <p>Chat with our Gemini-powered Location Intelligence Assistant. Get localized insights and remediation tips.</p>
     </div>
     """, unsafe_allow_html=True)
-    st.page_link("pages/6_💬_AI_Assistant.py", label="Chat Now →", use_container_width=True)
+    st.page_link("pages/6_AI_Assistant.py", label="Chat Now →", use_container_width=True)
 
 st.markdown("---")
 

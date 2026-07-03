@@ -47,13 +47,23 @@ from backend.services.hotspot_service import detect_hotspots
 hotspots = detect_hotspots(reports) if reports else []
 alerts = []
 
+# ---------------------------------------------------------
+# Interactive Temporal Forecast Timeline
+# ---------------------------------------------------------
+time_options = ["Yesterday", "Current Live", "+6h", "+12h", "+24h"]
+selected_time = st.select_slider(
+    "Interactive Temporal Forecast Timeline",
+    options=time_options,
+    value="Current Live"
+)
+
 # Generate a city-wide grid for Delhi once, JS will handle lazy rendering via viewport
 grid = map_service.generate_grid_for_bounds(
     north=28.9,
     south=28.3,
     east=77.5,
     west=76.8,
-    resolution_meters=1000  # slightly lower resolution for full city static load
+    resolution_meters=250  # Dense Hyperlocal Virtual Sensor Grid (250m)
 )
 
 props = {
@@ -62,7 +72,8 @@ props = {
     "reports": map_service.format_reports(reports),
     "hotspots": map_service.format_hotspots(hotspots),
     "alerts": map_service.format_alerts(alerts),
-    "estimated_grid": grid
+    "estimated_grid": grid,
+    "timeline_state": selected_time
 }
 
 # Serialize to JSON safely

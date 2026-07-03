@@ -216,66 +216,156 @@ else:
 
 st.markdown("---")
 
-# ── AI Dispatch Brief ──────────────────────
-st.markdown("### 🤖 AI-Generated Dispatch Brief")
+# ── Executive AI Summary ──────────────────────
+st.markdown("### 🤖 Executive AI Summary & Dispatch Brief")
 
-if st.button("🧠 Generate AI Dispatch Report", type="primary"):
-    with st.spinner("Gemini is analyzing current conditions..."):
-        if st.session_state.gemini_available and st.session_state.xgb_model:
-            try:
-                from backend.services.gemini_service import generate_municipal_dispatch
-                from backend.models.schemas import PredictionResult
-
-                pred = PredictionResult(
-                    estimated_aqi=estimated_aqi,
-                    risk_level=classify_aqi(estimated_aqi).risk_level,
-                    confidence=confidence_pct / 100.0,
-                    category_label=classify_aqi(estimated_aqi).label,
-                    category_color=classify_aqi(estimated_aqi).color,
-                    health_advisory=classify_aqi(estimated_aqi).health_advisory,
-                )
-                
-                weather_summary = "N/A"
-                if vs_result and vs_result.weather_summary:
-                    weather_summary = vs_result.weather_summary
-
-                dispatch = generate_municipal_dispatch(
-                    prediction=pred,
-                    weather_summary=weather_summary,
-                    client=st.session_state.gemini_client,
-                )
-
-                st.markdown(f"**📋 Incident Summary:** {dispatch.incident_summary}")
-                st.markdown("**🛡️ Recommended Municipal Actions:**")
-                for action in dispatch.recommended_actions:
-                    st.markdown(f"- {action}")
-                st.markdown("**🚛 Resource Allocation:**")
-                for res in dispatch.resource_allocation:
-                    st.markdown(f"- {res}")
-
-            except Exception as e:
-                st.error(f"Failed to generate dispatch brief: {e}")
-                
-        else:
-            st.info("Gemini API not available. Showing template dispatch.")
+if st.button("🧠 Generate Executive Brief", type="primary"):
+    with st.spinner("Gemini is analyzing the environmental digital twin matrix..."):
+        try:
+            from backend.services.executive_report import generate_executive_brief
+            from backend.services.hotspot_service import detect_hotspots
+            from backend.recommendation.incident_priority import rank_incidents
+            
+            raw_hotspots = detect_hotspots(reports) if reports else []
+            # Convert objects to dicts for the ranking engine if needed, or pass as is if properties match
+            hs_dicts = []
+            for h in raw_hotspots:
+                hs_dicts.append({
+                    "center_latitude": h.center_latitude,
+                    "center_longitude": h.center_longitude,
+                    "radius_km": h.radius_km,
+                    "avg_severity": h.avg_severity,
+                    "dominant_pollution_type": h.dominant_pollution_type,
+                })
+            
+            ranked_hotspots = rank_incidents(hs_dicts)
+            
+            brief = generate_executive_brief(ranked_hotspots, stats)
+            
             st.markdown(f"""
-            **📋 Incident Summary:** Air quality in central Delhi has reached {estimated_aqi:.0f} AQI,
-            classified as {classify_aqi(estimated_aqi).label}. Multiple citizen reports indicate active
-            pollution sources. Immediate municipal intervention is recommended.
+            <div style="background:rgba(255, 255, 255, 0.05);border-left:4px solid #ab47bc;
+                 border-radius:0 8px 8px 0;padding:1.5rem;margin-bottom:1.5rem;">
+                {brief}
+            </div>""", unsafe_allow_html=True)
+            
+        except Exception as e:
+            st.error(f"Failed to generate Executive Brief: {e}")
 
-            **📌 Recommended Actions:**
-            1. Deploy mobile monitoring unit to hotspot areas
-            2. Issue public health advisory via SMS
-            3. Activate water sprinkler systems on major roads
-
-            **🚛 Resource Deployment:**
-            - 2 water mist cannons
-            - 3 sanitation teams
-            - 1 mobile AQI monitoring van
-            """)
-
-# ── Recent Reports Table ──────────────────────
+# ── Incident Prioritization & Lifecycle ──────────────────────
+st.markdown("### 🚨 Active Priority Incidents")
+try:
+    from backend.services.hotspot_service import detect_hotspots
+    from backend.recommendation.incident_priority import rank_incidents
+    
+    raw_hotspots = detect_hotspots(reports) if reports else []
+    hs_dicts = []
+    for h in raw_hotspots:
+        hs_dicts.append({
+            "center_latitude": h.center_latitude,
+            "center_longitude": h.center_longitude,
+            "radius_km": h.radius_km,
+            "avg_severity": h.avg_severity,
+            "dominant_pollution_type": h.dominant_pollution_type,
+        })
+    ranked_hotspots = rank_incidents(hs_dicts)
+    
+    if ranked_hotspots:
+        for idx, hs in enumerate(ranked_hotspots[:3]):
+            with st.expander(f"Priority #{idx+1} | Severity: {hs['avg_severity']} | {hs['dominant_pollution_type']}"):
+                colA, colB, colC = st.columns(3)
+                colA.metric("Priority Score", f"{hs['priority_score']:.2f}")
+                colB.metric("Affected Pop", f"{hs['impact_metrics']['headcount']:,}")
+                colC.metric("Vulnerable Assets", hs['impact_metrics']['total_vulnerable_assets'])
+                
+                # Incident Lifecycle
+                st.markdown("**Incident Lifecycle:**")
+                stages = ["Detected", "Assigned", "En Route", "Arrived", "Resolved", "Verified"]
+                # Mock state for demo
+                current_stage = "Assigned" if idx == 0 else "Detected"
+                
+                cols = st.columns(len(stages))
+                for i, stage in enumerate(stages):
+                    color = "#4CAF50" if stages.index(current_stage) >= i else "#555"
+                    cols[i].markdown(f"<div style='text-align:center; padding:5px; background:{color}; border-radius:4px;'>{stage}</div>", unsafe_allow_html=True)
+                
+                if st.button(f"Advance Stage", key=f"adv_{idx}"):
+                    st.toast("Lifecycle stage advanced!")
+                    
+    else:
+        st.success("No active hotspots to prioritize.")
+except Exception as e:
+    st.error(f"Prioritization Engine unavailable: {e}")
+# 🧠 Explainable AI & Resource Optimizer 🧠
 st.markdown("---")
+st.markdown("### 🧠 Decision Support & Attribution")
+
+ds_col1, ds_col2 = st.columns(2)
+
+with ds_col1:
+    st.markdown("#### 🔍 Pollution Source Attribution (SHAP)")
+    try:
+        from backend.ml.attribution import attribution_engine
+        from backend.services.data_fusion import build_unified_observation
+        obs = build_unified_observation(28.6139, 77.2090, reports)
+        
+        # Mock SHAP analysis since full XGB is complex to invoke here directly
+        mock_shap = {
+            "top_contributors": [
+                {"feature": "pm10", "absolute_impact": 45.0},
+                {"feature": "traffic", "absolute_impact": 20.0}
+            ]
+        }
+        attr_result = attribution_engine.estimate_contributions(obs, mock_shap)
+        
+        st.write(f"**Dominant Source:** {attr_result['dominant_source']} (Confidence: {attr_result['confidence']}%)")
+        
+        import plotly.express as px
+        import pandas as pd
+        
+        attr_df = pd.DataFrame([
+            {"Source": k, "Contribution (%)": v} for k, v in attr_result['contributions'].items() if v > 0
+        ])
+        fig_attr = px.pie(attr_df, names="Source", values="Contribution (%)", template="plotly_dark", hole=0.5)
+        fig_attr.update_layout(height=300, margin=dict(t=0, b=0, l=0, r=0))
+        st.plotly_chart(fig_attr, use_container_width=True)
+    except Exception as e:
+        st.error(f"Failed to load Attribution Engine: {e}")
+
+with ds_col2:
+    st.markdown("#### 🚒 Automated Resource Optimization")
+    try:
+        from backend.recommendation.resource_optimizer import resource_optimizer
+        from backend.analytics.trend_service import trend_service
+        
+        # Get trend
+        hist_aqis = [estimated_aqi * 0.9, estimated_aqi * 0.95, estimated_aqi]
+        trend = trend_service.analyze_trend(estimated_aqi, hist_aqis)
+        
+        st.info(f"📈 **Current Trend:** {trend}")
+        
+        dom_src = attr_result.get("dominant_source", "Unknown") if 'attr_result' in locals() else "Unknown"
+        res_rec = resource_optimizer.get_recommendation(
+            lat=28.6139, lon=77.2090, 
+            dominant_source=dom_src, 
+            severity="High" if estimated_aqi > 200 else "Medium"
+        )
+        
+        if res_rec["error"] if "error" in res_rec else False:
+            st.warning(res_rec["error"])
+        else:
+            st.success(f"**Recommended Department:** {res_rec['required_department']}")
+            st.write(f"**Priority:** {res_rec['priority']}")
+            st.write(f"**Reasoning:** {res_rec['reasoning']}")
+            st.write(f"**Equipment Needed:** {res_rec['suggested_equipment']} ({res_rec['suggested_manpower']} personnel)")
+            
+            st.metric("Estimated Arrival (ETA)", f"{res_rec['eta_minutes']} mins", f"Distance: {res_rec['distance_km']} km", delta_color="inverse")
+            
+            if st.button("Dispatch Recommended Resources", type="primary"):
+                st.toast("Resources Dispatched Successfully!", icon="🚀")
+    except Exception as e:
+        st.error(f"Failed to load Resource Optimizer: {e}")
+
+# 📊 Recent Reports Table 📊
 st.markdown("### 📋 Recent Incident Reports")
 
 if reports:

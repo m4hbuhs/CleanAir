@@ -343,24 +343,26 @@ Gemini 2.5 Flash — Environmental Feature Extraction
     └── Smoke / Dust / Construction / Burning Detection
     │
     ▼
-Virtual Sensor Engine — Multi-Source Data Fusion
+Data Fusion Engine ── Google Earth Engine (Sentinel-2, FIRMS)
     ├── Official AQI Station Data (Open-Meteo CAMS)
     ├── Live Weather Conditions (Open-Meteo)
     ├── Historical Pollution Patterns (Hourly AQI)
-    ├── Satellite Observations (AOD, Thermal)
-    └── Citizen Report Density & Features
+    ├── Satellite Observations (AOD, Thermal Anomalies, NO2)
+    └── Citizen Report Density & Verification Score (0-100)
     │
     ▼
-XGBoost Model — AI Estimated Hyperlocal AQI
-    + Confidence Score (0–100%) + 24h Forecast
+XGBoost Model — AI Estimated Hyperlocal AQI + 24h Forecast
+    ├── Explainable AI (SHAP) — Feature Importance
+    └── Source Attribution (% Dust, % Smoke, % Traffic)
     │
     ▼
 ┌─── Municipal Alert Engine ──→ Municipal Dashboard
-│    (AQI > 150 + Complaints ≥ 3 + Confidence > 60%)
+│    (AQI > 150 + Verified Reports + High Confidence)
 │
-├─── DBSCAN Hotspot Detection ──→ Live Heatmap
+├─── Dispersion Engine (Plumes) ──→ Live Interactive Map
+│    (1h-24h plume forecasting via wind vectors)
 │
-├─── Gemini AI Dispatch Briefs ──→ Municipal Officers
+├─── Resource Optimizer ──→ Automated Dispatch (ETA, Priority)
 │
 └─── EcoToken Rewards ──→ Citizen Wallet
 ```

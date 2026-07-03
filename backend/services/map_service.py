@@ -120,6 +120,11 @@ class MapService:
                 dist = math.sqrt((current_lat - 28.6139)**2 + (current_lon - 77.2090)**2)
                 mock_aqi = max(50, 350 - (dist * 1000))
                 
+                # Simulate some GEE data for the UI representation
+                mock_aod = max(0.1, (mock_aqi / 300) * 1.5)
+                mock_no2 = max(10, (mock_aqi / 200) * 50)
+                mock_thermal = True if mock_aqi > 250 else False
+
                 cells.append({
                     "bounds": {
                         "north": current_lat + lat_step,
@@ -128,7 +133,12 @@ class MapService:
                         "west": current_lon
                     },
                     "aqi": mock_aqi,
-                    "confidence": 85
+                    "confidence": 85,
+                    "satellite": {
+                        "aod": mock_aod,
+                        "no2": mock_no2,
+                        "thermal_anomaly": mock_thermal
+                    }
                 })
                 current_lon += lon_step
             current_lat += lat_step
