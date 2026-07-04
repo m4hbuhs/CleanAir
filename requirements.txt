@@ -23,6 +23,10 @@ Pillow>=10.0.0
 
 # HTTP
 requests>=2.31.0
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+python-multipart>=0.0.6
+imagehash>=4.3.0
 
 # Optional: Google Cloud (for production)
 # google-cloud-speech>=2.20.0
