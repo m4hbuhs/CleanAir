@@ -1,22 +1,20 @@
-import React, { useState, useRef, useEffect } from 'react';
-import Map, { Marker, useMap } from 'react-map-gl/maplibre';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import { useState, useEffect } from 'react';
+import { Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { Cloud, ShieldCheck, Crosshair, Loader2, Search, Sparkles, Satellite } from 'lucide-react';
 import { useAppContext } from '../AppContext';
 
 const INITIAL_VIEW_STATE = {
-  longitude: 77.2090, // Delhi NCR center
-  latitude: 28.6139,
+  center: { lat: 28.6139, lng: 77.2090 },
   zoom: 11.5,
-  pitch: 45,
-  bearing: 0
+  tilt: 45,
+  heading: 0
 };
 
 export const PollutionMap = () => {
   const [mapHotspots, setMapHotspots] = useState<any[]>([]);
-  const [selectedHotspot, setSelectedHotspot] = useState<any>(null);
   const [liveLocation, setLiveLocation] = useState<{lat: number, lon: number} | null>(null);
-  const [liveAqiData, setLiveAqiData] = useState<any>(null);
+  const [selectedHotspot, setSelectedHotspot] = useState<any>(null);
+    const [liveAqiData, setLiveAqiData] = useState<any>(null);
   const [isLocating, setIsLocating] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -25,7 +23,7 @@ export const PollutionMap = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [geminiAnalysis, setGeminiAnalysis] = useState<string | null>(null);
 
-  const mapRef = useRef<any>(null);
+  const map = useMap(); // from @vis.gl/react-google-maps APIProvider context
   const { setGlobalAlert, forensicReports } = useAppContext();
 
   useEffect(() => {
@@ -71,15 +69,23 @@ export const PollutionMap = () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+      // Upgraded to use Google Maps Geocoding API for much better search results!
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyD8zKcncg2dhMYpPvIGGUpbUF8CjPnDPhE";
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchQuery)}&key=${apiKey}`);
       const data = await res.json();
-      if (data && data.length > 0) {
-        const { lat, lon, display_name } = data[0];
-        const parsedLat = parseFloat(lat);
-        const parsedLon = parseFloat(lon);
+      
+      if (data.status === 'OK' && data.results.length > 0) {
+        const location = data.results[0].geometry.location;
+        const parsedLat = location.lat;
+        const parsedLon = location.lng;
+        const display_name = data.results[0].formatted_address;
         
-        if (mapRef.current) {
-          mapRef.current.flyTo({ center: [parsedLon, parsedLat], zoom: 13, duration: 2000 });
+        // Auto-correct the user's typo in the search bar!
+        setSearchQuery(display_name);
+        
+        if (map) {
+          map.panTo({ lat: parsedLat, lng: parsedLon });
+          map.setZoom(13);
         }
         
         // Fetch AQI for that location
@@ -112,6 +118,7 @@ export const PollutionMap = () => {
       }
     } catch (e) {
       console.error("Geocoding error", e);
+      alert("Error contacting the Geocoding service.");
     } finally {
       setIsSearching(false);
     }
@@ -130,8 +137,9 @@ export const PollutionMap = () => {
       const lon = position.coords.longitude;
       setLiveLocation({ lat, lon });
       
-      if (mapRef.current) {
-        mapRef.current.flyTo({ center: [lon, lat], zoom: 13, duration: 2000 });
+      if (map) {
+        map.panTo({ lat, lng: lon });
+        map.setZoom(13);
       }
 
       try {
@@ -171,18 +179,14 @@ export const PollutionMap = () => {
     });
   };
 
-  // Helper to generate 24 hour drift interpolating real WAQI daily forecast ranges
   const get24HourForecast = (hotspot: any) => {
     const hours = [];
     if (hotspot.forecast && hotspot.forecast.length >= 2) {
       const today = hotspot.forecast[0];
       const tomorrow = hotspot.forecast[1];
       for(let i=0; i<24; i+=2) {
-        // Interpolate between today's avg and tomorrow's avg
         const baseAqi = today.avg + ((tomorrow.avg - today.avg) * (i / 24));
-        // Calculate daily amplitude based on reported min/max
         const amplitude = (today.max - today.min) / 2;
-        // Apply diurnal peak (traffic/heat peaks around 2pm, troughs at 2am)
         const drift = Math.cos(((i - 14) / 24) * Math.PI * 2) * amplitude;
         hours.push({
           hour: `+${i}h`,
@@ -190,7 +194,6 @@ export const PollutionMap = () => {
         });
       }
     } else {
-      // Fallback for mock hotspots
       const baseAqi = typeof hotspot.pm25 === 'number' ? hotspot.pm25 : 150;
       for(let i=0; i<24; i+=2) {
         const drift = Math.sin((i / 24) * Math.PI * 2) * (baseAqi * 0.3);
@@ -206,19 +209,22 @@ export const PollutionMap = () => {
   return (
     <div className="w-full h-full relative">
       <Map
-        ref={mapRef}
-        initialViewState={INITIAL_VIEW_STATE}
-        mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+        mapId="DEMO_MAP_ID"
+        defaultCenter={INITIAL_VIEW_STATE.center}
+        defaultZoom={INITIAL_VIEW_STATE.zoom}
+        defaultTilt={INITIAL_VIEW_STATE.tilt}
+        defaultHeading={INITIAL_VIEW_STATE.heading}
+        gestureHandling={'greedy'}
+        disableDefaultUI={true}
+        colorScheme={'DARK'}
       >
         {/* Live WAQI Hotspots */}
         {mapHotspots.map(spot => (
-          <Marker 
+          <AdvancedMarker 
             key={spot.id} 
-            longitude={spot.lon} 
-            latitude={spot.lat}
-            anchor="bottom"
+            position={{lat: spot.lat, lng: spot.lon}}
             onClick={(e) => {
-              e.originalEvent.stopPropagation();
+              if (e.stop) e.stop();
               setSelectedHotspot(spot);
               triggerGeminiAnalysis();
             }}
@@ -239,18 +245,16 @@ export const PollutionMap = () => {
                 fill="currentColor"
               />
             </div>
-          </Marker>
+          </AdvancedMarker>
         ))}
 
         {/* Live User Submitted Reports */}
         {forensicReports.map(report => report.lat && report.lon ? (
-          <Marker 
+          <AdvancedMarker 
             key={report.id} 
-            longitude={report.lon} 
-            latitude={report.lat}
-            anchor="bottom"
+            position={{lat: report.lat, lng: report.lon}}
             onClick={(e) => {
-              e.originalEvent.stopPropagation();
+              if (e.stop) e.stop();
               const formattedHotspot = {
                 id: report.id,
                 name: `Incident: ${report.location}`,
@@ -269,17 +273,15 @@ export const PollutionMap = () => {
                 <span className="text-purple-400 font-bold text-xs">!</span>
               </div>
             </div>
-          </Marker>
+          </AdvancedMarker>
         ) : null)}
 
         {/* Live User Marker */}
         {liveAqiData && (
-           <Marker 
-            longitude={liveAqiData.lon} 
-            latitude={liveAqiData.lat}
-            anchor="bottom"
+           <AdvancedMarker 
+            position={{lat: liveAqiData.lat, lng: liveAqiData.lon}}
             onClick={(e) => {
-              e.originalEvent.stopPropagation();
+              if (e.stop) e.stop();
               setSelectedHotspot(liveAqiData);
               if(!geminiAnalysis && !isAnalyzing) triggerGeminiAnalysis();
             }}
@@ -288,7 +290,7 @@ export const PollutionMap = () => {
               <div className={`absolute -top-6 w-16 h-16 rounded-full blur-md opacity-60 animate-ping bg-blue-500`} />
               <div className="w-6 h-6 bg-blue-500 border-2 border-white rounded-full shadow-[0_0_15px_rgba(59,130,246,0.8)] relative z-10"></div>
             </div>
-          </Marker>
+          </AdvancedMarker>
         )}
       </Map>
 

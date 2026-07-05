@@ -10,7 +10,7 @@ credentials/
 secrets/
 service_account*.json
 google_credentials.json
-firebase-adminsdk*.json
+*firebase-adminsdk*.json
 *credentials*.json
 
 myenv/
@@ -46,3 +46,10 @@ Thumbs.db
 # Large ML Models
 final_json_models/
 cleanair_xgb_model.json
+
+# IDE
+.vscode/
+.idea/
+
+# Others
+junk/

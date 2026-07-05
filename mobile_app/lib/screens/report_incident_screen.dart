@@ -3,12 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../services/api_service.dart';
 
 class ReportIncidentScreen extends StatefulWidget {
-  const ReportIncidentScreen({Key? key}) : super(key: key);
+  const ReportIncidentScreen({super.key});
 
   @override
   _ReportIncidentScreenState createState() => _ReportIncidentScreenState();
@@ -252,9 +251,9 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> with Single
                         height: 120,
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: _imageFile == null ? Colors.white.withOpacity(0.05) : Colors.teal.withOpacity(0.2),
+                          color: _imageFile == null ? Colors.white.withValues(alpha: 0.05) : Colors.teal.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: _imageFile == null ? Colors.white12 : Colors.tealAccent.withOpacity(0.5)),
+                          border: Border.all(color: _imageFile == null ? Colors.white12 : Colors.tealAccent.withValues(alpha: 0.5)),
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -281,7 +280,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> with Single
                           height: 180,
                           width: double.infinity,
                           decoration: BoxDecoration(
-                            color: _isRecording ? Colors.redAccent.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                            color: _isRecording ? Colors.redAccent.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(32),
                             border: Border.all(
                               color: _isRecording ? Colors.redAccent : Colors.white12,
@@ -289,7 +288,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> with Single
                             ),
                             boxShadow: [
                               if (_isRecording)
-                                BoxShadow(color: Colors.redAccent.withOpacity(0.4), blurRadius: 30, spreadRadius: 5)
+                                BoxShadow(color: Colors.redAccent.withValues(alpha: 0.4), blurRadius: 30, spreadRadius: 5)
                             ]
                           ),
                           child: Column(

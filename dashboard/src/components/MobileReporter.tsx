@@ -1,4 +1,4 @@
-import React, { useState, useContext, useRef } from 'react';
+import { useState, useContext, useRef } from 'react';
 import { 
   ChevronLeft, 
   Camera, 
@@ -358,11 +358,11 @@ const MobileReporter: React.FC = () => {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="bg-slate-900/80 p-3 rounded-lg border border-indigo-500/20 shadow-inner">
                         <div className="text-[10px] text-indigo-400/80 mb-1 font-mono tracking-wider">HAZARD TYPE</div>
-                        <div className="text-sm font-bold text-rose-400">{geminiReport.vision.hazard_classification || "Unknown"}</div>
+                        <div className="text-sm font-bold text-rose-400">{geminiReport?.vision?.hazard_classification || "Unknown"}</div>
                       </div>
                       <div className="bg-slate-900/80 p-3 rounded-lg border border-indigo-500/20 shadow-inner">
                         <div className="text-[10px] text-indigo-400/80 mb-1 font-mono tracking-wider">CONFIDENCE SCORE</div>
-                        <div className="text-sm font-bold text-emerald-400">{geminiReport.vision.confidence_score || "0"}% Confidence</div>
+                        <div className="text-sm font-bold text-emerald-400">{geminiReport?.vision?.confidence_score || "0"}% Confidence</div>
                       </div>
                     </div>
 
@@ -370,24 +370,24 @@ const MobileReporter: React.FC = () => {
                     <div className="space-y-3">
                       {/* AQI Micro-Badge */}
                       <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-3 py-2 rounded-full text-xs font-bold flex items-center justify-center">
-                        [AQI: {geminiReport.vision.aqi_impact?.aqi_estimate || "N/A"} - {geminiReport.vision.aqi_impact?.category || "Unknown"}]
+                        [AQI: {geminiReport?.vision?.aqi_impact?.aqi_estimate || "N/A"} - {geminiReport?.vision?.aqi_impact?.category || "Unknown"}]
                       </div>
                       
                       {/* Landmark Visibility Gauge */}
                       <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50">
                         <div className="flex justify-between text-xs text-slate-300 mb-1.5">
-                          <span>Landmark Visibility: {geminiReport.vision.visibility_gauge?.text || "Unknown"}</span>
-                          <span className="font-mono">{geminiReport.vision.visibility_gauge?.percentage || 0}%</span>
+                          <span>Landmark Visibility: {geminiReport?.vision?.visibility_gauge?.text || "Unknown"}</span>
+                          <span className="font-mono">{geminiReport?.vision?.visibility_gauge?.percentage || 0}%</span>
                         </div>
                         <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                          <div className="bg-indigo-400 h-full rounded-full" style={{ width: `${geminiReport.vision.visibility_gauge?.percentage || 0}%` }}></div>
+                          <div className="bg-indigo-400 h-full rounded-full" style={{ width: `${geminiReport?.vision?.visibility_gauge?.percentage || 0}%` }}></div>
                         </div>
                       </div>
 
                       {/* Health Impact Checklist */}
                       <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 space-y-2">
                         <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">Health Impact Checklist</div>
-                        {geminiReport.vision.health_impacts?.map((impact: string, i: number) => (
+                        {geminiReport?.vision?.health_impacts?.map((impact: string, i: number) => (
                           <div key={i} className="flex items-start gap-2 text-xs text-slate-300 leading-tight">
                             <span>{i === 0 ? '⚠️' : '👶'}</span>
                             <span>{impact}</span>
@@ -398,7 +398,7 @@ const MobileReporter: React.FC = () => {
                       {/* Safety Risk Card */}
                       <div className="bg-red-500/10 border-l-2 border-red-500 p-3 rounded-r-lg">
                         <div className="text-xs text-red-200 font-medium">
-                          🚨 {geminiReport.vision.safety_risk || "No immediate safety risks identified."}
+                          🚨 {geminiReport?.vision?.safety_risk || "No immediate safety risks identified."}
                         </div>
                       </div>
                     </div>
@@ -407,11 +407,11 @@ const MobileReporter: React.FC = () => {
                     <div className="space-y-3 pt-2">
                       <div className="text-[10px] text-indigo-400/80 font-mono tracking-wider">ATMOSPHERIC TRAP CONDITIONS</div>
                       <div className="text-xs font-semibold text-slate-200 bg-slate-800/80 px-2 py-1 rounded inline-block">
-                        ☁️ {geminiReport.vision.atmospheric_conditions || "Unknown Conditions"}
+                        ☁️ {geminiReport?.vision?.atmospheric_conditions || "Unknown Conditions"}
                       </div>
                       
                       <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                        {geminiReport.vision.drift_projections?.map((proj: string, i: number) => (
+                        {geminiReport?.vision?.drift_projections?.map((proj: string, i: number) => (
                           <div key={i} className="flex-none bg-slate-900 border border-slate-700 p-2 rounded text-[10px] font-mono text-slate-300 whitespace-nowrap">
                             {proj}
                           </div>
@@ -426,7 +426,7 @@ const MobileReporter: React.FC = () => {
                       <div className="space-y-2">
                         <div className="text-[10px] text-slate-500 uppercase">Short-Term</div>
                         <div className="flex flex-wrap gap-1">
-                          {geminiReport.vision.mcd_playbook?.short_term?.map((action: string, i: number) => (
+                          {geminiReport?.vision?.mcd_playbook?.short_term?.map((action: string, i: number) => (
                             <span key={i} className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] px-1.5 py-0.5 rounded-sm">{action}</span>
                           ))}
                         </div>
@@ -435,7 +435,7 @@ const MobileReporter: React.FC = () => {
                       <div className="space-y-2">
                         <div className="text-[10px] text-slate-500 uppercase">Medium-Term</div>
                         <div className="flex flex-wrap gap-1">
-                          {geminiReport.vision.mcd_playbook?.medium_term?.map((action: string, i: number) => (
+                          {geminiReport?.vision?.mcd_playbook?.medium_term?.map((action: string, i: number) => (
                             <span key={i} className="bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] px-1.5 py-0.5 rounded-sm">{action}</span>
                           ))}
                         </div>
@@ -444,7 +444,7 @@ const MobileReporter: React.FC = () => {
                       <div className="space-y-2">
                         <div className="text-[10px] text-slate-500 uppercase">Long-Term Strategic</div>
                         <div className="flex flex-wrap gap-1">
-                          {geminiReport.vision.mcd_playbook?.long_term?.map((action: string, i: number) => (
+                          {geminiReport?.vision?.mcd_playbook?.long_term?.map((action: string, i: number) => (
                             <span key={i} className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 text-[9px] px-1.5 py-0.5 rounded-sm">{action}</span>
                           ))}
                         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { Shield, Fingerprint, Camera, MapPin, Activity, CheckCircle, AlertTriangle, X, FileText } from 'lucide-react';
 import { AppContext } from '../AppContext';
 import type { ForensicReport } from '../AppContext';

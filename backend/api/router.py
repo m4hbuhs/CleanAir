@@ -1,147 +1,191 @@
 import logging
-import math
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, status
+import os
+import requests
+from typing import Optional
+from datetime import datetime, timezone
+from fastapi import APIRouter, Form, UploadFile, File, HTTPException, status, Request
 from pydantic import BaseModel
+import pandas as pd
 import numpy as np
+from google.cloud import vision
+from firebase_admin import firestore
 
-from backend.ml.forensics import ForensicsPipeline
-from backend.ml.xai import XAIEngine
-from backend.ml.gemini_engine import GeminiAnalyzer
-
-try:
-    from production_stack.config import STATION_COORDINATES, DISTRICT_STATION_MAP
-except ImportError:
-    STATION_COORDINATES = {
-        "Mandir Marg": (28.6364, 77.2010),
-        "Anand Vihar": (28.6476, 77.3158),
-        "Punjabi Bagh": (28.6740, 77.1310),
-    }
-    DISTRICT_STATION_MAP = {"central": ["Mandir Marg"], "east": ["Anand Vihar"], "west": ["Punjabi Bagh"]}
+from backend.config import get_aqi_category_for_pm25, STATION_COORDINATES, DISTRICT_STATION_MAP
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
-MAX_AUDIO_SIZE_BYTES = 10 * 1024 * 1024 # 10 MB
-
-# Memory State
-INCIDENT_STORE = []
 
 def get_nearest_station(lat: float, lon: float) -> str:
     nearest = None
     min_dist = float('inf')
     for station, coords in STATION_COORDINATES.items():
-        # Quick haversine proxy
         dist = (lat - coords[0])**2 + (lon - coords[1])**2
         if dist < min_dist:
             min_dist = dist
             nearest = station
     return nearest or "Unknown"
 
-def get_district(station: str) -> str:
+def get_district_for_station(station: str) -> str:
     for district, stations in DISTRICT_STATION_MAP.items():
         if station in stations:
             return district
-    return "Unknown"
+    return "global"
 
-@router.post("/report")
+def get_reverse_geocode(lat: float, lon: float) -> dict:
+    api_key = os.getenv("GOOGLE_MAPS_GEOCODING_API_KEY")
+    result = {"street_name": "Unknown Street", "neighborhood": "Unknown"}
+    if not api_key:
+        logger.warning("GOOGLE_MAPS_GEOCODING_API_KEY not set. Skipping reverse geocoding.")
+        return result
+        
+    url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lon}&key={api_key}"
+    try:
+        resp = requests.get(url, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "OK" and data.get("results"):
+            components = data["results"][0].get("address_components", [])
+            for comp in components:
+                types = comp.get("types", [])
+                if "route" in types:
+                    result["street_name"] = comp.get("long_name", "Unknown Street")
+                if "neighborhood" in types or "sublocality" in types:
+                    result["neighborhood"] = comp.get("long_name", "Unknown")
+    except Exception as e:
+        logger.error(f"Reverse geocoding failed for {lat}, {lon}: {e}")
+        
+    return result
+
+class PredictRequest(BaseModel):
+    lat: float
+    lon: float
+
+class PredictResponse(BaseModel):
+    nearest_station: str
+    current_pm25: float
+    forecast_24h: list[float]
+    forecast_categories: list[str]
+
+from backend.ml.feature_engineering import payload_to_feature_matrix
+
+@router.post("/predict", response_model=PredictResponse)
+async def predict_aqi(req: PredictRequest, request: Request):
+    try:
+        models_dict = getattr(request.app.state, "models", {})
+        if not models_dict:
+            raise ValueError("No models loaded in application state.")
+            
+        nearest_station = get_nearest_station(req.lat, req.lon)
+        district = get_district_for_station(nearest_station)
+        
+        # Fallback to global if district not loaded
+        pipeline = models_dict.get(district) or models_dict.get("global")
+        if not pipeline or not pipeline.get("models"):
+            raise ValueError(f"No XGBoost pipeline found for district '{district}' or 'global'.")
+            
+        # Fetch 36-feature real-time data asynchronously
+        df = await payload_to_feature_matrix(req.lat, req.lon)
+        
+        # 1. Automated Runtime Imputation Guard
+        medians = pipeline.get("medians", {})
+        for col in df.columns:
+            if pd.isna(df[col].iloc[0]):
+                fallback_val = medians.get(col, 0.0)
+                logger.warning(f"NaN detected in live stream for {col}. Imputing {fallback_val}")
+                df[col] = fallback_val
+
+        current_input = df.to_numpy()
+        
+        if current_input.shape[1] != 36:
+            raise ValueError(f"CRITICAL SHAPE MISMATCH: Expected (1, 36), got {current_input.shape}")
+
+        forecast = []
+        
+        # 2. Execute the 24-hour forecasting using the autoregressive pipeline models
+        for hour_model in pipeline["models"]:
+            pred = float(hour_model.predict(current_input)[0])
+            pred = max(0.0, pred)
+            forecast.append(pred)
+            
+            # Autoregressive feedback loop: Append this hour's prediction as a new feature
+            current_input = np.hstack([current_input, np.array([[pred]])])
+            
+        # Set current as the first prediction for simplicity
+        current_pm25 = forecast[0] if forecast else 100.0
+            
+        categories = [get_aqi_category_for_pm25(val) for val in forecast]
+        
+        return PredictResponse(
+            nearest_station=nearest_station,
+            current_pm25=current_pm25,
+            forecast_24h=forecast,
+            forecast_categories=categories
+        )
+    except Exception as e:
+        logger.error(f"Predict endpoint failed: {e}", exc_info=True)
+        # Raise strict 500 error instead of silent fallback
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/report-incident")
 async def submit_report(
     latitude: float = Form(...),
     longitude: float = Form(...),
     timestamp: str = Form(...),
-    image: Optional[UploadFile] = File(None),
-    audio: Optional[UploadFile] = File(None)
+    image: Optional[UploadFile] = File(None)
 ):
-    """
-    Ingests zero-typing multi-modal reports. Enforces byte thresholds.
-    """
     try:
-        # Binary size checks
         image_bytes = b""
         if image:
-            chunk_size = 1024 * 1024
-            while True:
-                chunk = await image.read(chunk_size)
-                if not chunk: break
-                image_bytes += chunk
-                if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
-                    raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image exceeds 5MB")
-            await image.seek(0)
-            
-        audio_bytes = b""
-        if audio:
-            chunk_size = 1024 * 1024
-            while True:
-                chunk = await audio.read(chunk_size)
-                if not chunk: break
-                audio_bytes += chunk
-                if len(audio_bytes) > MAX_AUDIO_SIZE_BYTES:
-                    raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Audio exceeds 10MB")
-            await audio.seek(0)
-            
-        # Run Forensics
-        forensics = ForensicsPipeline()
-        trust_score, is_duplicate, metrics = forensics.evaluate(
-            latitude=latitude, 
-            longitude=longitude, 
-            timestamp=timestamp, 
-            image_bytes=image_bytes
-        )
+            image_bytes = await image.read()
+            if len(image_bytes) > MAX_IMAGE_SIZE_BYTES:
+                raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image exceeds 5MB")
         
-        requires_manual_review = trust_score < 75.0 or is_duplicate
+        is_verified = False
+        trust_score = 0.0
         
-        # Spatial Map
+        if image_bytes:
+            try:
+                client = vision.ImageAnnotatorClient()
+                vision_image = vision.Image(content=image_bytes)
+                response = client.label_detection(image=vision_image)
+                labels = response.label_annotations
+                
+                target_labels = {"smoke", "fire", "pollution", "dust", "haze", "smog"}
+                for label in labels:
+                    if label.description.lower() in target_labels and label.score > 0.75:
+                        is_verified = True
+                        if label.score > trust_score:
+                            trust_score = label.score
+            except Exception as e:
+                logger.error(f"Cloud Vision API failed: {e}")
+                
         station = get_nearest_station(latitude, longitude)
-        district = get_district(station)
+        geo_data = get_reverse_geocode(latitude, longitude)
         
-        # XAI
-        incident_type = "localized_fire" if trust_score > 60 else "vehicular_congestion"
-        xai_engine = XAIEngine()
-        
-        explanation = xai_engine.generate_feature_attribution(incident_type)
-        action_plan = xai_engine.generate_prescriptive_action(incident_type, latitude, longitude)
-        xai_metrics = xai_engine.build_xai_metrics(incident_type)
-        
-        # Construct Forecast Trajectory
-        # In a fully wired environment this calls inference.py run_hyperlocal_inference
-        # Simulating the exact 24-step decay for the frontend schema
-        forecast24h = []
-        base_pm25 = 145.0
-        for i in range(24):
-            forecast24h.append({
-                "hour": f"t+{i+1}",
-                "pm25": max(10, base_pm25 - (i * 2.5) + float(np.random.normal(0, 5))),
-                "expectedReduction": f"{min(100, i * 2.5)}%"
-            })
-        
-        # Create Schema-perfect Incident Object
         incident_record = {
-            "id": f"INC-{len(INCIDENT_STORE) + 1:04d}",
-            "station": station,
-            "district": district,
             "latitude": latitude,
             "longitude": longitude,
+            "street_name": geo_data["street_name"],
+            "neighborhood": geo_data["neighborhood"],
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
-            "trustScore": int(trust_score),
-            "exifMatch": metrics.get("exif_match", False),
-            "telemetryMatch": metrics.get("telemetry_match", False),
-            "duplicateHashCheck": is_duplicate,
-            "pollutionType": incident_type,
-            "severity": "HIGH" if trust_score > 60 else "MODERATE",
-            "xaiExplanation": explanation,
-            "xaiMetrics": xai_metrics,
-            "prescription": action_plan.get("command", "Awaiting review"),
-            "forecast24h": forecast24h
+            "verified": is_verified,
+            "trust_score": trust_score,
+            "station": station
         }
         
-        INCIDENT_STORE.insert(0, incident_record)
+        try:
+            db = firestore.client()
+            db.collection("incidents").add(incident_record)
+        except Exception as e:
+            logger.error(f"Firestore save failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save incident to database")
 
         return {
             "status": "Processed",
-            "trustScore": int(trust_score),
-            "requiresManualReview": requires_manual_review
+            "verified": is_verified,
+            "trust_score": trust_score
         }
         
     except HTTPException as http_exc:
@@ -150,69 +194,12 @@ async def submit_report(
         logger.error(f"Ingestion crash: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal ingestion error")
 
-
 @router.get("/reports")
 async def get_reports():
-    """
-    Live Feed Core Gateway.
-    Returns the explicitly structured JSON array mapped to the React state.
-    """
-    if not INCIDENT_STORE:
-        # Seed exact schema payload to prevent React component crash
-        return [{
-            "id": "INC-0001",
-            "station": "Mandir Marg",
-            "district": "central",
-            "latitude": 28.6364,
-            "longitude": 77.2010,
-            "timestamp": (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat(),
-            "trustScore": 92,
-            "exifMatch": True,
-            "telemetryMatch": True,
-            "duplicateHashCheck": False,
-            "pollutionType": "localized_fire",
-            "severity": "CRITICAL",
-            "xaiExplanation": "Driven by: Detected garbage burning (+45%), Calm wind conditions (+35%).",
-            "xaiMetrics": {
-                "pollutants": {"PM2.5": 45, "PM10": 20},
-                "windVectors": {"Wind_U": 0.5, "Wind_V": -0.2},
-                "meteorology": {"AT": 30.0, "RH": 45.0},
-                "temporal": "Incident occurred during peak emission hour."
-            },
-            "prescription": "Dispatch rapid response unit to (28.6364, 77.2010).",
-            "forecast24h": [
-                {"hour": f"t+{i+1}", "pm25": max(10, 145 - (i * 2.5)), "expectedReduction": f"{i * 2}%"}
-                for i in range(24)
-            ]
-        }]
-    return INCIDENT_STORE
-
-@router.post("/analyze")
-async def analyze_report(
-    locationText: str = Form(default="Unknown"),
-    textDetails: str = Form(default=""),
-    aqi: str = Form(default=""),
-    image: Optional[UploadFile] = File(None),
-    audio: Optional[UploadFile] = File(None)
-):
-    """
-    Direct proxy to Google Gemini AI to analyze raw citizen evidence dynamically.
-    """
-    image_bytes = None
-    if image:
-        image_bytes = await image.read()
-        
-    audio_bytes = None
-    if audio:
-        audio_bytes = await audio.read()
-        
-    analyzer = GeminiAnalyzer()
-    result = analyzer.analyze_incident(
-        image_bytes=image_bytes,
-        audio_bytes=audio_bytes,
-        text_details=textDetails,
-        location=locationText,
-        aqi=aqi
-    )
-    
-    return result
+    try:
+        db = firestore.client()
+        docs = db.collection("incidents").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(50).stream()
+        return [doc.to_dict() for doc in docs]
+    except Exception as e:
+        logger.error(f"Firestore fetch failed: {e}")
+        return []

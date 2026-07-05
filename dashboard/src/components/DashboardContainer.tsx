@@ -1,19 +1,14 @@
 import { useState, useEffect } from 'react';
-import Map from 'react-map-gl/maplibre';
-import DeckGL from '@deck.gl/react';
-import { ScatterplotLayer } from '@deck.gl/layers';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import { Map, AdvancedMarker } from '@vis.gl/react-google-maps';
 import { ShieldAlert, Server, Activity } from 'lucide-react';
 import { IncidentFeed } from './IncidentFeed';
 import { ActionPanel } from './ActionPanel';
 import type { Station, Incident } from '../types';
 
 const INITIAL_VIEW_STATE = {
-  longitude: 77.2090,
-  latitude: 28.6139,
+  lng: 77.2090,
+  lat: 28.6139,
   zoom: 10,
-  pitch: 45,
-  bearing: 0
 };
 
 // Mock fallback data generators
@@ -89,34 +84,6 @@ export const DashboardContainer = () => {
 
   const verifiedIncidents = incidents.filter(i => i.trust_score >= 75);
 
-  const layers = [
-    // Station telemetry block layer
-    new ScatterplotLayer({
-      id: 'stations-layer',
-      data: stations,
-      getPosition: d => [d.lon, d.lat],
-      getFillColor: d => {
-        if (d.current_pm25 < 50) return [34, 197, 94, 200]; // Green
-        if (d.current_pm25 < 100) return [234, 179, 8, 200]; // Yellow
-        return [239, 68, 68, 200]; // Red
-      },
-      getRadius: 1000,
-      pickable: true,
-    }),
-    // Verified Hotspot markers
-    new ScatterplotLayer({
-      id: 'hotspots-layer',
-      data: verifiedIncidents,
-      getPosition: d => [d.lon, d.lat],
-      getFillColor: [239, 68, 68, 255],
-      getLineColor: [255, 255, 255, 255],
-      lineWidthMinPixels: 2,
-      stroked: true,
-      getRadius: 400,
-      pickable: true,
-    })
-  ];
-
   return (
     <div className="flex h-screen w-full bg-slate-900 text-slate-50 overflow-hidden font-sans">
       
@@ -146,16 +113,33 @@ export const DashboardContainer = () => {
       {/* RIGHT CONTENT: MAP & ACTION PANEL */}
       <div className="flex-1 flex flex-col relative">
         <div className="flex-1 relative">
-          <DeckGL
-            initialViewState={INITIAL_VIEW_STATE}
-            controller={true}
-            layers={layers}
-            getTooltip={({object}) => object && (object.name ? `${object.name}\nPM2.5: ${object.current_pm25}` : object.id)}
+          <Map 
+            mapId="DEMO_MAP_ID"
+            defaultCenter={INITIAL_VIEW_STATE}
+            defaultZoom={INITIAL_VIEW_STATE.zoom}
+            gestureHandling={'greedy'}
+            disableDefaultUI={true}
+            colorScheme={'DARK'}
           >
-            <Map 
-              mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            />
-          </DeckGL>
+            {stations.map(station => (
+              <AdvancedMarker
+                key={station.id}
+                position={{lat: station.lat, lng: station.lon}}
+                title={`${station.name} - PM2.5: ${station.current_pm25}`}
+              >
+                <div className={`w-4 h-4 rounded-full ${station.current_pm25 < 50 ? 'bg-emerald-500' : station.current_pm25 < 100 ? 'bg-amber-500' : 'bg-red-500'} shadow-lg border border-white/50 opacity-80`} />
+              </AdvancedMarker>
+            ))}
+            {verifiedIncidents.map(incident => (
+              <AdvancedMarker
+                key={incident.id}
+                position={{lat: incident.lat, lng: incident.lon}}
+                title={`Incident: ${incident.type}`}
+              >
+                 <div className="w-8 h-8 rounded-full border-4 border-red-500 bg-red-500/30 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.8)]" />
+              </AdvancedMarker>
+            ))}
+          </Map>
         </div>
         
         {/* EXPANDABLE BOTTOM ACTION PANEL */}

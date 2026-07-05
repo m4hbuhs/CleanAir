@@ -6,7 +6,7 @@ void main() {
 }
 
 class CleanAirApp extends StatelessWidget {
-  const CleanAirApp({Key? key}) : super(key: key);
+  const CleanAirApp({super.key});
 
   @override
   Widget build(BuildContext context) {

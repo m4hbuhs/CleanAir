@@ -13,6 +13,8 @@ from typing import Dict, Any
 import pandas as pd
 import numpy as np
 
+from backend.waqi_client import fetch_waqi_data
+
 logger = logging.getLogger(__name__)
 
 # The strict 36-feature contract explicitly required by the District Models
@@ -27,55 +29,6 @@ REQUIRED_FEATURES = [
     "NO2_lag_1", "NO2_lag_2"
 ]
 
-def fetch_waqi_pollution_data(lat: float, lon: float) -> Dict[str, float]:
-    """
-    CRITICAL CONSTRAINT: Pulls pollutant features exclusively from station-level 
-    WAQI or CPCB APIs. Open-Meteo is strictly banned for pollutants.
-    """
-    # Placeholder for actual WAQI API call.
-    # In production, replace with `requests.get(f"https://api.waqi.info/feed/geo:{lat};{lon}/?token={WAQI_TOKEN}")`
-    logger.info(f"Fetching WAQI live telemetry for coordinates ({lat}, {lon})")
-    
-    # Simulating the exact pollutant keys required
-    return {
-        "PM2.5": 145.0,
-        "PM10": 210.0,
-        "NO": 18.5,
-        "NO2": 45.0,
-        "NOx": 32.0,
-        "NH3": 12.0,
-        "SO2": 15.0,
-        "CO": 1.2,
-        "Ozone": 40.0,
-        "Benzene": 2.1,
-        "Toluene": 5.4,
-        # Simulate lags returning from local cache/db query
-        "PM25_mean_24": 150.0,
-        "PM25_lag_1": 140.0, "PM25_lag_2": 138.0, "PM25_lag_3": 142.0, 
-        "PM25_lag_4": 148.0, "PM25_lag_5": 155.0, "PM25_lag_6": 160.0,
-        "PM10_lag_1": 200.0, "PM10_lag_2": 195.0, "PM10_lag_3": 205.0, 
-        "PM10_lag_4": 215.0, "PM10_lag_5": 225.0, "PM10_lag_6": 230.0,
-        "NO2_lag_1": 42.0, "NO2_lag_2": 40.0
-    }
-
-def fetch_openmeteo_weather_data(lat: float, lon: float) -> Dict[str, float]:
-    """
-    CRITICAL CONSTRAINT: Open-Meteo is strictly restricted to meteorological 
-    variables ONLY (AT, RH, Rain, Solar Radiation, Pressure, Wind Speed, Wind Direction).
-    """
-    # Placeholder for actual Open-Meteo API call.
-    logger.info(f"Fetching Open-Meteo weather data for coordinates ({lat}, {lon})")
-    
-    return {
-        "AT": 32.5,
-        "RH": 55.0,
-        "TOT-RF": 0.0,
-        "SR": 450.0,
-        "BP": 1005.0,
-        "WS": 3.2,     # Wind Speed in m/s
-        "WD": 180.0    # Wind Direction in degrees (South)
-    }
-
 def transform_wind_cartesian(ws: float, wd: float) -> tuple[float, float]:
     """
     Eliminates angular discontinuities (359 -> 1) by mapping speed and direction 
@@ -87,54 +40,70 @@ def transform_wind_cartesian(ws: float, wd: float) -> tuple[float, float]:
     wind_v = ws * math.sin(wd_rad)
     return wind_u, wind_v
 
-def build_historical_features(station_name: str, lat: float, lon: float) -> pd.DataFrame:
+async def build_historical_features(station_name: str, lat: float, lon: float) -> pd.DataFrame:
     """
     Legacy wrapper provided for backwards compatibility with the VirtualSensorEngine.
     Internally routes to payload_to_feature_matrix.
     """
     logger.warning(f"Using backwards compatible 'build_historical_features' for {station_name}")
-    return payload_to_feature_matrix(lat, lon)
+    return await payload_to_feature_matrix(lat, lon)
 
-def payload_to_feature_matrix(lat: float, lon: float) -> pd.DataFrame:
+async def payload_to_feature_matrix(lat: float, lon: float) -> pd.DataFrame:
     """
-    Assembles the complete 36-feature pipeline. Merges WAQI pollutants with 
-    Open-Meteo weather, applies Cartesian wind transformation, and extracts 
-    cyclical time indicators.
+    Assembles the complete 36-feature pipeline. Merges unified WAQI data,
+    applies Cartesian wind transformation, and extracts cyclical time indicators.
+    Unreported pollutants fallback to np.nan for dynamic XGBoost imputation.
     
     Returns:
         pd.DataFrame of shape (1, 36) containing the strictly ordered features.
     """
     try:
-        # 1. Fetch exact isolated sources
-        pollutants = fetch_waqi_pollution_data(lat, lon)
-        weather = fetch_openmeteo_weather_data(lat, lon)
+        # Fetch unified meteorological & pollutant data from WAQI
+        real_data = await fetch_waqi_data(lat, lon)
         
-        # 2. Cartesian Wind Transformation
-        wind_u, wind_v = transform_wind_cartesian(weather.get("WS", 0), weather.get("WD", 0))
+        # Cartesian Wind Transformation
+        ws = real_data.get("wind_speed", 3.2)
+        wd = 180.0 # Wind direction is not reliably in WAQI standard iaqi, using fallback
+        wind_u, wind_v = transform_wind_cartesian(ws, wd)
         
-        # 3. Cyclical Temporal Features (Omit Year and Day)
+        # Cyclical Temporal Features
         now = datetime.now()
         
         feature_dict = {
-            **pollutants,
-            "AT": weather.get("AT", 25.0),
-            "RH": weather.get("RH", 50.0),
-            "TOT-RF": weather.get("TOT-RF", 0.0),
-            "SR": weather.get("SR", 0.0),
-            "BP": weather.get("BP", 1013.25),
+            "PM2.5": real_data.get("current_pm25", np.nan),
+            "PM10": real_data.get("pm10", np.nan),
+            "NO": np.nan,
+            "NO2": real_data.get("no2", np.nan),
+            "NOx": np.nan,
+            "NH3": np.nan,
+            "SO2": real_data.get("so2", np.nan),
+            "CO": real_data.get("co", np.nan),
+            "Ozone": real_data.get("o3", np.nan),
+            "Benzene": np.nan,
+            "Toluene": np.nan,
+            "AT": real_data.get("temperature", 32.5),
+            "RH": real_data.get("humidity", 55.0),
+            "TOT-RF": 0.0,
+            "SR": 450.0,
+            "BP": real_data.get("p", 1005.0),
             "Wind_U": wind_u,
             "Wind_V": wind_v,
             "Month": float(now.month),
             "Hour": float(now.hour),
-            "DayOfWeek": float(now.weekday())
+            "DayOfWeek": float(now.weekday()),
+            # Lags unavailable from live API, set to NaN to trigger strict median imputation
+            "PM25_mean_24": np.nan,
+            "PM25_lag_1": np.nan, "PM25_lag_2": np.nan, "PM25_lag_3": np.nan, 
+            "PM25_lag_4": np.nan, "PM25_lag_5": np.nan, "PM25_lag_6": np.nan,
+            "PM10_lag_1": np.nan, "PM10_lag_2": np.nan, "PM10_lag_3": np.nan, 
+            "PM10_lag_4": np.nan, "PM10_lag_5": np.nan, "PM10_lag_6": np.nan,
+            "NO2_lag_1": np.nan, "NO2_lag_2": np.nan
         }
         
-        # 4. Strict Alignment to Model Expectations
-        # Ensure we construct the DataFrame exactly in the order the XGBoost expects
+        # Strict Alignment to Model Expectations
         row = []
         for feature in REQUIRED_FEATURES:
-            val = feature_dict.get(feature, np.nan)
-            row.append(val)
+            row.append(feature_dict.get(feature, np.nan))
             
         df = pd.DataFrame([row], columns=REQUIRED_FEATURES)
         

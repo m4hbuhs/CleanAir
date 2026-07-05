@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import MobileReporter from './MobileReporter';
 import { MessageCircle, Award, Star, TrendingUp, X, Mic, Smartphone } from 'lucide-react';
 
