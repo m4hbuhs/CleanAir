@@ -12,7 +12,7 @@ service_account*.json
 google_credentials.json
 *firebase-adminsdk*.json
 *credentials*.json
-
+*.json
 myenv/
 venv/
 .venv/
@@ -52,4 +52,4 @@ cleanair_xgb_model.json
 .idea/
 
 # Others
-junk/
+junk/
