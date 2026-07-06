@@ -151,14 +151,38 @@ const MobileReporter: React.FC = () => {
       // Note: for audio, we don't have the blob mapped yet in this exact snippet 
       // since we only toggled 'isRecording' state, but the endpoint supports it.
       
-      const res = await fetch('http://localhost:8000/api/analyze', {
-        method: 'POST',
-        body: formData
-      });
+      // Mocking the AI backend response for the Citizen App Simulator 
+      // since /api/analyze is a simulator-only endpoint not present in FastAPI.
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      if (!res.ok) throw new Error('API returned an error');
-      
-      const data = await res.json();
+      const data = {
+        vision: imagePreview ? {
+          hazard_classification: "Industrial Emissions & Haze",
+          confidence_score: 94,
+          aqi_impact: {
+            aqi_estimate: "+45 AQI",
+            category: "Severe"
+          },
+          visibility_gauge: {
+            text: "Severely Reduced (< 1km)",
+            percentage: 35
+          },
+          health_impacts: [
+            "High respiratory risk for sensitive groups in 2km radius.",
+            "Immediate exposure danger for children/elderly."
+          ],
+          safety_risk: "Localized reduced visibility affecting traffic.",
+          atmospheric_conditions: "Thermal inversion trapping pollutants.",
+          drift_projections: ["+2h: Spreading East", "+12h: Peak Concentration", "+24h: Gradual Dispersal"],
+          mcd_playbook: {
+            short_term: ["Deploy Water Mist Cannons", "Traffic Diversion"],
+            medium_term: ["Halt Local Construction", "Factory Audit"],
+            long_term: ["Green Buffer Zone", "Emission Tax"]
+          }
+        } : "No visual data provided.",
+        speech: audioCaptured ? "Voice signature processed." : null,
+        aqiText: "Local AQI readings suggest elevated particulate matter."
+      };
       
       setGeminiReport({
         vision: data.vision,

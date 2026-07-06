@@ -17,6 +17,15 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     google_maps_api_key: str = Field(default="", alias="GOOGLE_MAPS_API_KEY")
     google_cloud_project: str = Field(default="", alias="GOOGLE_CLOUD_PROJECT")
+    openweathermap_api_key: str = Field(default="", alias="OPENWEATHERMAP_API_KEY")
+
+    # --- Redis ---
+    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
+
+    # --- Twilio ---
+    twilio_account_sid: str = Field(default="", alias="TWILIO_ACCOUNT_SID")
+    twilio_auth_token: str = Field(default="", alias="TWILIO_AUTH_TOKEN")
+    twilio_whatsapp_number: str = Field(default="", alias="TWILIO_WHATSAPP_NUMBER")
 
     # --- Firebase ---
     firebase_credentials_path: Optional[str] = Field(

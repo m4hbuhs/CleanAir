@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
-import { Cloud, ShieldCheck, Crosshair, Loader2, Search, Sparkles, Satellite } from 'lucide-react';
+import { Cloud, ShieldCheck, Crosshair, Loader2, Search, Sparkles, Satellite, Layers } from 'lucide-react';
 import { useAppContext } from '../AppContext';
 
 const INITIAL_VIEW_STATE = {
@@ -10,7 +10,46 @@ const INITIAL_VIEW_STATE = {
   heading: 0
 };
 
+const MapCircle = (props: google.maps.CircleOptions & { onClick?: (e: google.maps.MapMouseEvent) => void }) => {
+  const map = useMap();
+  const circleRef = useRef<google.maps.Circle | null>(null);
+  const clickListenerRef = useRef<google.maps.MapsEventListener | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+    const { onClick, ...options } = props;
+    circleRef.current = new google.maps.Circle({ map, ...options });
+    
+    if (onClick) {
+      clickListenerRef.current = circleRef.current.addListener('click', onClick);
+    }
+
+    return () => {
+      if (clickListenerRef.current) {
+        google.maps.event.removeListener(clickListenerRef.current);
+      }
+      circleRef.current?.setMap(null);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (circleRef.current) {
+      const { onClick, ...options } = props;
+      circleRef.current.setOptions(options);
+    }
+  }, [props]);
+
+  return null;
+};
+
+const MOCK_HOTSPOTS = [
+  { id: 'hs1', lat: 28.6300, lng: 77.2200, severity: 5, radius: 800, name: 'Industrial Thermal Anomaly' },
+  { id: 'hs2', lat: 28.6050, lng: 77.2350, severity: 4, radius: 600, name: 'High AOD Detected' },
+  { id: 'hs3', lat: 28.6100, lng: 77.2100, severity: 3, radius: 400, name: 'Mixed Use Emissions' }
+];
+
 export const PollutionMap = () => {
+  const [showHotspots, setShowHotspots] = useState(true);
   const [mapHotspots, setMapHotspots] = useState<any[]>([]);
   const [liveLocation, setLiveLocation] = useState<{lat: number, lon: number} | null>(null);
   const [selectedHotspot, setSelectedHotspot] = useState<any>(null);
@@ -69,16 +108,14 @@ export const PollutionMap = () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
-      // Upgraded to use Google Maps Geocoding API for much better search results!
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyD8zKcncg2dhMYpPvIGGUpbUF8CjPnDPhE";
-      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchQuery)}&key=${apiKey}`);
+      // Upgraded to use Nominatim OpenStreetMap Geocoding API (Free, no API key required)
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
       const data = await res.json();
       
-      if (data.status === 'OK' && data.results.length > 0) {
-        const location = data.results[0].geometry.location;
-        const parsedLat = location.lat;
-        const parsedLon = location.lng;
-        const display_name = data.results[0].formatted_address;
+      if (data && data.length > 0) {
+        const parsedLat = parseFloat(data[0].lat);
+        const parsedLon = parseFloat(data[0].lon);
+        const display_name = data[0].display_name;
         
         // Auto-correct the user's typo in the search bar!
         setSearchQuery(display_name);
@@ -276,6 +313,31 @@ export const PollutionMap = () => {
           </AdvancedMarker>
         ) : null)}
 
+        {/* Layer: Hotspots */}
+        {showHotspots && MOCK_HOTSPOTS.map(h => (
+          <MapCircle
+            key={h.id}
+            center={{ lat: h.lat, lng: h.lng }}
+            radius={h.radius}
+            fillColor={h.severity >= 4 ? "#F44336" : "#FF9800"}
+            fillOpacity={0.35}
+            strokeColor="#FFFFFF"
+            strokeWeight={2}
+            strokeOpacity={0.8}
+            onClick={() => {
+              setSelectedHotspot({
+                id: h.id,
+                name: h.name,
+                lat: h.lat,
+                lon: h.lng,
+                type: h.severity >= 4 ? 'critical' : 'warning',
+                pm25: 'Anomaly Detected',
+              });
+              triggerGeminiAnalysis();
+            }}
+          />
+        ))}
+
         {/* Live User Marker */}
         {liveAqiData && (
            <AdvancedMarker 
@@ -312,6 +374,13 @@ export const PollutionMap = () => {
 
       {/* Floating Action Buttons */}
       <div className="absolute bottom-6 right-6 z-20 flex flex-col gap-4">
+        <button 
+          onClick={() => setShowHotspots(!showHotspots)}
+          className={`bg-slate-900 border ${showHotspots ? 'border-amber-500 text-amber-400' : 'border-slate-700 text-slate-100'} p-4 rounded-full shadow-2xl hover:bg-slate-800 transition-colors flex items-center justify-center group`}
+          title="Toggle Hotspots Layer"
+        >
+          <Layers className="group-hover:scale-110 transition-transform" size={24} />
+        </button>
         <button 
           onClick={handleLocateMe}
           disabled={isLocating}

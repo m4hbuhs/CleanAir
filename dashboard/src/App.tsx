@@ -4,6 +4,7 @@ import { PollutionMap } from './components/PollutionMap';
 import { AdminCommandCenter } from './components/AdminCommandCenter';
 import ForensicsEngine from './components/ForensicsEngine';
 import { PublicPortal } from './components/PublicPortal';
+import { DeficiencyMap } from './components/DeficiencyMap';
 import { AppContextProvider } from './AppContext';
 import { APIProvider } from '@vis.gl/react-google-maps';
 
@@ -17,6 +18,7 @@ export default function App() {
           {activeView === 'map' && <PollutionMap />}
           {activeView === 'command' && <AdminCommandCenter />}
           {activeView === 'forensics' && <ForensicsEngine />}
+          {activeView === 'deficiency' && <DeficiencyMap />}
           {activeView === 'portal' && <PublicPortal />}
         </MasterLayout>
       </AppContextProvider>

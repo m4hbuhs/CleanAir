@@ -1,9 +1,10 @@
 import logging
 import os
 import requests
+import asyncio
 from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Form, UploadFile, File, HTTPException, status, Request
+from fastapi import APIRouter, Form, UploadFile, File, HTTPException, status, Request, BackgroundTasks
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
@@ -11,6 +12,9 @@ from google.cloud import vision
 from firebase_admin import firestore
 
 from backend.config import get_aqi_category_for_pm25, STATION_COORDINATES, DISTRICT_STATION_MAP
+from backend.ml.feature_engineering import payload_to_feature_matrix
+from backend.ml.model_loader import get_model_pipeline
+from backend.services.notification_service import notify_subscribers
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -68,27 +72,28 @@ class PredictResponse(BaseModel):
     forecast_24h: list[float]
     forecast_categories: list[str]
 
-from backend.ml.feature_engineering import payload_to_feature_matrix
+def run_xgboost_predictions(pipeline, current_input):
+    forecast = []
+    for hour_model in pipeline["models"]:
+        pred = float(hour_model.predict(current_input)[0])
+        pred = max(0.0, pred)
+        forecast.append(pred)
+        current_input = np.hstack([current_input, np.array([[pred]])])
+    return forecast
 
 @router.post("/predict", response_model=PredictResponse)
 async def predict_aqi(req: PredictRequest, request: Request):
     try:
-        models_dict = getattr(request.app.state, "models", {})
-        if not models_dict:
-            raise ValueError("No models loaded in application state.")
-            
         nearest_station = get_nearest_station(req.lat, req.lon)
         district = get_district_for_station(nearest_station)
         
-        # Fallback to global if district not loaded
-        pipeline = models_dict.get(district) or models_dict.get("global")
+        pipeline = get_model_pipeline(district) or get_model_pipeline("global")
         if not pipeline or not pipeline.get("models"):
             raise ValueError(f"No XGBoost pipeline found for district '{district}' or 'global'.")
             
-        # Fetch 36-feature real-time data asynchronously
-        df = await payload_to_feature_matrix(req.lat, req.lon)
+        # Passing nearest_station to feature matrix generation for station-specific lag caching
+        df = await payload_to_feature_matrix(req.lat, req.lon, nearest_station)
         
-        # 1. Automated Runtime Imputation Guard
         medians = pipeline.get("medians", {})
         for col in df.columns:
             if pd.isna(df[col].iloc[0]):
@@ -101,18 +106,8 @@ async def predict_aqi(req: PredictRequest, request: Request):
         if current_input.shape[1] != 36:
             raise ValueError(f"CRITICAL SHAPE MISMATCH: Expected (1, 36), got {current_input.shape}")
 
-        forecast = []
-        
-        # 2. Execute the 24-hour forecasting using the autoregressive pipeline models
-        for hour_model in pipeline["models"]:
-            pred = float(hour_model.predict(current_input)[0])
-            pred = max(0.0, pred)
-            forecast.append(pred)
+        forecast = await asyncio.to_thread(run_xgboost_predictions, pipeline, current_input)
             
-            # Autoregressive feedback loop: Append this hour's prediction as a new feature
-            current_input = np.hstack([current_input, np.array([[pred]])])
-            
-        # Set current as the first prediction for simplicity
         current_pm25 = forecast[0] if forecast else 100.0
             
         categories = [get_aqi_category_for_pm25(val) for val in forecast]
@@ -125,11 +120,11 @@ async def predict_aqi(req: PredictRequest, request: Request):
         )
     except Exception as e:
         logger.error(f"Predict endpoint failed: {e}", exc_info=True)
-        # Raise strict 500 error instead of silent fallback
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/report-incident")
 async def submit_report(
+    background_tasks: BackgroundTasks,
     latitude: float = Form(...),
     longitude: float = Form(...),
     timestamp: str = Form(...),
@@ -144,6 +139,7 @@ async def submit_report(
         
         is_verified = False
         trust_score = 0.0
+        pollution_type = "environmental hazard"
         
         if image_bytes:
             try:
@@ -156,12 +152,14 @@ async def submit_report(
                 for label in labels:
                     if label.description.lower() in target_labels and label.score > 0.75:
                         is_verified = True
+                        pollution_type = label.description.lower()
                         if label.score > trust_score:
                             trust_score = label.score
             except Exception as e:
                 logger.error(f"Cloud Vision API failed: {e}")
                 
         station = get_nearest_station(latitude, longitude)
+        district = get_district_for_station(station)
         geo_data = get_reverse_geocode(latitude, longitude)
         
         incident_record = {
@@ -172,7 +170,9 @@ async def submit_report(
             "timestamp": timestamp or datetime.now(timezone.utc).isoformat(),
             "verified": is_verified,
             "trust_score": trust_score,
-            "station": station
+            "station": station,
+            "district": district,
+            "pollution_type": pollution_type
         }
         
         try:
@@ -181,6 +181,9 @@ async def submit_report(
         except Exception as e:
             logger.error(f"Firestore save failed: {e}")
             raise HTTPException(status_code=500, detail="Failed to save incident to database")
+
+        if is_verified:
+            background_tasks.add_task(notify_subscribers, incident_record)
 
         return {
             "status": "Processed",
@@ -203,3 +206,21 @@ async def get_reports():
     except Exception as e:
         logger.error(f"Firestore fetch failed: {e}")
         return []
+
+
+@router.get("/deficiency-map")
+async def get_deficiency_map():
+    """
+    Returns the Infrastructure Deficiency Score for all 13 Delhi districts.
+    Falls back to deterministic mock data if Firestore is unavailable.
+    """
+    try:
+        from backend.analytics.deficiency_scorer import get_all_district_scores
+        scores = await asyncio.to_thread(get_all_district_scores)
+        return {"status": "ok", "source": "firestore", "districts": scores}
+    except Exception as e:
+        logger.warning(f"Firestore scoring failed, using mock data: {e}")
+        from backend.analytics.deficiency_scorer import get_mock_district_scores
+        scores = get_mock_district_scores()
+        return {"status": "ok", "source": "mock", "districts": scores}
+

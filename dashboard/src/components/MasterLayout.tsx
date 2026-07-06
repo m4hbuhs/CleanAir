@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Map, ShieldAlert, Smartphone, Globe, Bell, MessageCircle, Tv, X } from 'lucide-react';
+import { LayoutDashboard, Map, ShieldAlert, Smartphone, Globe, Bell, MessageCircle, Tv, X, BarChart3 } from 'lucide-react';
 import { useAppContext } from '../AppContext';
 
 interface Props {
@@ -60,6 +60,12 @@ export const MasterLayout: React.FC<Props> = ({ children, activeView, setActiveV
             label="Forensics" 
             isActive={activeView === 'forensics'} 
             onClick={() => setActiveView('forensics')} 
+          />
+          <NavItem 
+            icon={<BarChart3 size={24} />} 
+            label="Deficiency" 
+            isActive={activeView === 'deficiency'} 
+            onClick={() => setActiveView('deficiency')} 
           />
           <div className="my-2 border-b border-slate-800 w-8 mx-auto" />
           <NavItem 
